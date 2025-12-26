@@ -476,4 +476,4 @@ system that exploits the fact that http.zig allows you to detach sockets from ha
 In Zig 0.16 - The recommended approach here will be to use the Evented IO to create long running coroutines 
 for those handlers that want to subscribe to topics.
 
-For publishing to topics, then just connect in a message bus such as NATS, and thats all thats needed.
+For publishing to topics, then just connect in a message bus such as Redis, or NATS, or Postgres listen/notify and thats all thats needed.
