@@ -1,3 +1,10 @@
+const std = @import("std");
+const Io = std.Io;
+const Allocator = std.mem.Allocator;
+
+pub const Server = @import("server.zig");
+pub const HTTPRequest = Server.HTTPRequest;
+
 pub const Command = enum {
     patchElements,
     patchSignals,
@@ -47,12 +54,6 @@ pub const ExecuteScriptOptions = struct {
 
 pub const SSEOptions = struct {
     buffer_size: usize = 16 * 1024,
-};
-
-pub const HTTPRequest = struct {
-    req: *std.http.Server.Request,
-    io: Io,
-    arena: std.mem.Allocator,
 };
 
 pub const SSE = struct {
@@ -188,11 +189,11 @@ pub const SSE = struct {
     }
 };
 
-pub fn NewSSE(http: HTTPRequest, buf: []u8) !SSE {
+pub fn NewSSE(http: Server.HTTPRequest, buf: []u8) !SSE {
     return NewSSEOpt(http, buf, .{});
 }
 
-pub fn NewSSEOpt(http: HTTPRequest, buf: []u8, opt: SSEOptions) !SSE {
+pub fn NewSSEOpt(http: Server.HTTPRequest, buf: []u8, opt: SSEOptions) !SSE {
     var res = try http.req.respondStreaming(
         buf,
         .{ .respond_options = .{ .extra_headers = &.{
@@ -420,30 +421,6 @@ pub const Message = struct {
         return bytes.len;
     }
 };
-
-pub fn readSignals(comptime T: type, req: anytype) !T {
-    switch (req.method) {
-        .GET => {
-            const query = try req.query();
-            const signals = query.get("datastar") orelse return error.MissingDatastarKey;
-            return std.json.parseFromSliceLeaky(
-                T,
-                req.arena,
-                signals,
-                .{ .ignore_unknown_fields = true },
-            );
-        },
-        else => {
-            const body = req.body() orelse return error.MissingBody;
-            return std.json.parseFromSliceLeaky(
-                T,
-                req.arena,
-                body,
-                .{ .ignore_unknown_fields = true },
-            );
-        },
-    }
-}
 
 const SessionType = ?[]const u8;
 const StreamList = std.ArrayList(std.net.Stream);
@@ -704,8 +681,3 @@ pub fn Callback(comptime ctx: type) type {
     }
     return *const fn (ctx, std.net.Stream, SessionType) anyerror!void;
 }
-
-const std = @import("std");
-const Io = std.Io;
-const Allocator = std.mem.Allocator;
-const builtin = @import("builtin");

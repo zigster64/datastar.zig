@@ -2,8 +2,10 @@ const std = @import("std");
 const builtin = @import("builtin");
 const datastar = @import("datastar");
 const HTTPRequest = datastar.HTTPRequest;
-const rebooter = @import("rebooter16.zig");
+const rebooter = @import("rebooter.zig");
+
 const Io = std.Io;
+const Params = datastar.Server.Params;
 
 const PORT = 8080;
 const MAX_THREADS = 2000;
@@ -34,80 +36,34 @@ pub fn main() !void {
     threaded.setAsyncLimit(std.Io.Limit.limited64(MAX_THREADS));
     const io = threaded.io();
 
+    try rebooter.start(io, allocator);
+
     std.debug.print(
         "Created Threaded IO with limit of {} threads\n",
         .{threaded.async_limit.toInt() orelse 0},
     );
 
-    const address = try Io.net.IpAddress.parseIp4("0.0.0.0", PORT);
-    var server = try address.listen(io, .{ .reuse_address = true });
-    defer server.deinit(io);
+    var server = try datastar.Server.init(io, allocator, "0.0.0.0", PORT);
+    defer server.deinit();
 
-    try rebooter.start(io, allocator);
+    const r = server.router;
+    try r.get("/", index);
+
+    try r.get("/text-html", textHtml);
+    try r.get("/patch", patchElements);
+    try r.post("/patch/opts", patchElementsOpts);
+
+    try r.get("/code/:snip", code);
 
     std.debug.print("Server listening on http://localhost:8080\n", .{});
-
-    while (true) {
-        const conn = try server.accept(io);
-        // this should spawn a thread, because line 12 above
-        // if io is Evented, then io.concurrent should run this as a coroutine
-        var future = try io.concurrent(handleConnection, .{ io, allocator, conn });
-        _ = future.await(io);
-    }
-}
-
-fn handleConnection(io: Io, gpa: std.mem.Allocator, conn: Io.net.Stream) void {
-    var arena: std.heap.ArenaAllocator = .init(gpa);
-    const alloc = arena.allocator();
-    defer {
-        conn.close(io);
-        arena.deinit();
-    }
-
-    var read_buffer: [4096]u8 = undefined;
-    var write_buffer: [4096]u8 = undefined;
-
-    var reader = conn.reader(io, &read_buffer);
-    var writer = conn.writer(io, &write_buffer);
-
-    var server = std.http.Server.init(&reader.interface, &writer.interface);
-
-    while (true) {
-        var request = server.receiveHead() catch |err| {
-            if (err == error.HttpConnectionClosing) break;
-            return;
-        };
-        router(io, &request, alloc) catch |err| {
-            std.debug.print("Routing error: {}\n", .{err});
-        };
-    }
-}
-
-fn router(io: Io, req: *std.http.Server.Request, arena: std.mem.Allocator) !void {
-    const path = req.head.target;
-    const http = HTTPRequest{
-        .io = io,
-        .req = req,
-        .arena = arena,
-    };
-    if (std.mem.eql(u8, path, "/")) {
-        return index(http);
-    } else if (match(path, "/text-html")) {
-        return textHtml(http);
-    } else if (match(path, "/patch")) {
-        return patch(http);
-    } else if (match(path, "/code")) {
-        return code(http);
-    } else {
-        return req.respond("Not Found", .{ .status = .not_found });
-    }
-}
-
-fn match(path: []const u8, pattern: []const u8) bool {
-    return (std.mem.eql(u8, path[0..pattern.len], pattern));
+    try server.run();
 }
 
 fn index(http: HTTPRequest) !void {
+    var t1 = try std.time.Timer.start();
+    defer {
+        std.debug.print("Index elapsed {}(ns)\n", .{t1.read()});
+    }
     const html = @embedFile("01_index.html");
     return try http.req.respond(html, .{
         .extra_headers = &.{.{ .name = "content-type", .value = "text/html" }},
@@ -120,14 +76,14 @@ fn textHtml(http: HTTPRequest) !void {
         std.debug.print("TextHTML elapsed {}(μs)\n", .{t1.read() / std.time.ns_per_ms});
     }
 
-    return try http.req.respond(try std.fmt.allocPrint(http.arena,
-        \\<p id="text-html">This is update number {d}</p>
-    , .{getCountAndIncrement()}), .{
-        .extra_headers = &.{.{ .name = "content-type", .value = "text/html" }},
-    });
+    return try http.html(
+        try std.fmt.allocPrint(http.arena,
+            \\<p id="text-html">This is update number {d}</p>
+        , .{getCountAndIncrement()}),
+    );
 }
 
-fn patch(http: HTTPRequest) !void {
+fn patchElements(http: HTTPRequest) !void {
     var t1 = try std.time.Timer.start();
     defer {
         std.debug.print("patchElements elapsed {}(μs)\n", .{t1.read() / std.time.ns_per_ms});
@@ -145,6 +101,62 @@ fn patch(http: HTTPRequest) !void {
     );
 }
 
+// create a patchElements stream, which will write commands over the SSE connection
+// to update parts of the DOM. It will look for the DOM with the matching ID in the default case
+//
+// Use a variety of patch options for this one
+fn patchElementsOpts(http: HTTPRequest) !void {
+    var t1 = try std.time.Timer.start();
+    defer {
+        std.debug.print("patchElementsOpts elapsed {}(μs)\n", .{t1.read() / std.time.ns_per_ms});
+    }
+
+    const Opts = struct {
+        morph: []const u8,
+    };
+
+    const signals = try http.readSignals(Opts);
+    // jump out if we didnt set anything
+    if (signals.morph.len < 1) {
+        return;
+    }
+
+    var buf: [1024]u8 = undefined;
+    var sse = try datastar.NewSSE(http, &buf);
+    defer sse.close();
+
+    // read the signals to work out which options to set, checking the name of the
+    // option vs the enum values, and add them relative to the mf-patch-opt item
+    var patch_mode: datastar.PatchMode = .outer;
+    for (std.enums.values(datastar.PatchMode)) |mt| {
+        if (std.mem.eql(u8, @tagName(mt), signals.morph)) {
+            patch_mode = mt;
+            break; // can only have 1 patch type
+        }
+    }
+
+    if (patch_mode == .outer or patch_mode == .inner) {
+        return; // dont do morphs - its not relevant to this demo card
+    }
+
+    var w = sse.patchElementsWriter(.{
+        .selector = "#mf-patch-opts",
+        .mode = patch_mode,
+    });
+    switch (patch_mode) {
+        .replace => {
+            try w.writeAll(
+                \\<p id="mf-patch-opts" class="border-4 border-error">Complete Replacement of the OUTER HTML</p>
+            );
+        },
+        else => {
+            try w.print(
+                \\<p>This is update number {d}</p>
+            , .{getCountAndIncrement()});
+        },
+    }
+}
+
 const snippets = [_][]const u8{
     @embedFile("snippets/code1.zig"),
     @embedFile("snippets/code2.zig"),
@@ -159,12 +171,8 @@ const snippets = [_][]const u8{
 };
 
 fn code(http: HTTPRequest) !void {
-    const path_only = std.mem.sliceTo(http.req.head.target, '?');
-    var path_iter = std.mem.tokenizeScalar(u8, path_only, '/');
-    _ = path_iter.next();
-    const snip = path_iter.next() orelse {
-        return http.req.respond("Missing ID", .{ .status = .bad_request });
-    };
+    const snip = http.params.get("snip") orelse "1";
+    std.debug.print("code with :snip = {s}\n", .{snip});
     const snip_id = try std.fmt.parseInt(u8, snip, 10);
 
     if (snip_id < 1 or snip_id > snippets.len) {

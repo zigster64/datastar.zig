@@ -1,23 +1,22 @@
 const std = @import("std");
-const logz = @import("logz");
+const Io = std.Io;
 
-pub fn start(gpa: std.mem.Allocator) !void {
-    const thread = try std.Thread.spawn(.{}, watchLoop, .{gpa});
-    thread.detach();
+pub fn start(io: Io, gpa: std.mem.Allocator) !void {
+    _ = try io.concurrent(watchLoop, .{ io, gpa });
 }
 
-fn watchLoop(gpa: std.mem.Allocator) !void {
+fn watchLoop(io: Io, gpa: std.mem.Allocator) !void {
     const cwd = std.fs.cwd();
 
     var initial_inode: u64 = 0;
-    var initial_mtime: i128 = 0;
+    var initial_mtime: Io.Timestamp = .zero;
     const path = try std.fs.selfExePathAlloc(gpa);
     defer gpa.free(path);
 
     // wait around till the inital inode is available
     while (true) {
         const stat = cwd.statFile(path) catch {
-            std.Thread.sleep(2 * std.time.ns_per_s);
+            try io.sleep(.fromSeconds(2), .real);
             continue;
         };
         initial_inode = stat.inode;
@@ -26,27 +25,18 @@ fn watchLoop(gpa: std.mem.Allocator) !void {
     }
 
     while (true) {
-        std.Thread.sleep(2 * std.time.ns_per_s);
+        try io.sleep(.fromSeconds(2), .real);
 
         const stat = cwd.statFile(path) catch |err| {
-            logz.err()
-                .string("path", path)
-                .string("state", "Failed to stat()")
-                .err(err)
-                .log();
+            std.debug.print("Path {s} failed to stat(): {}\n", .{ path, err });
             continue;
         };
 
         const inode_changed = (stat.inode != initial_inode);
-        const mtime_changed = (stat.mtime > initial_mtime);
+        const mtime_changed = (stat.mtime.toMilliseconds() > initial_mtime.toMilliseconds());
 
         if (inode_changed or mtime_changed) {
-            logz.info()
-                .string("EXIT", "binary changed")
-                .string("ACTION", "reboot ♻️")
-                .int("INODE", stat.inode)
-                .int("MTIME", stat.mtime)
-                .log();
+            std.debug.print("Binary Changed - Reboot ♻️\n", .{});
 
             const args = try std.process.argsAlloc(gpa);
             const self_path = try std.fs.selfExePathAlloc(gpa);
