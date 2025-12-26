@@ -1,4 +1,4 @@
-# Datastar lib for http.zig
+# Datastar lib for zig 0.16-dev
 
 A Zig library for 0.16 / latest async/concurrent stdlib that conforms to the Datastar SDK specification.
 
