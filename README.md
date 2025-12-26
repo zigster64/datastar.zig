@@ -140,24 +140,6 @@ Using http.zig :
 
 - example_5  shows an example multi-player Gardening Simulator using pub/sub
 
-Using Tokamak with Dependency Injection :
-
-- tokamak_basic  shows using the Datastar API using basic SDK handlers (same as example_1, but with Tokamak)
-
-<!-- Using zig stdlib http server : -->
-
-TODO :
-
-- Zig stdlib examples with Zig 0.16 async/threaded
-- Jetzig examples
-- Zio/Dusty examples
-- zzz examples
-- zap examples
-- backstage (actor framework) examples
-
-
-<!-- - example_10 as per example_1, but using zig stdlib instead of http.zig -->
-
 
 # Installation and Usage
 
@@ -166,7 +148,7 @@ To build an application using this SDK
 1) Add datastar.http.zig as a dependency in your `build.zig.zon`:
 
 ```bash
-zig fetch --save="datastar" "git+https://github.com/zigstser64/datastar.http.zig#master"
+zig fetch --save="datastar" "git+https://github.com/zigstser64/datastar.zig#master"
 ```
 
 2) In your `build.zig`, add the `datastar` module as a dependency you your program:
@@ -181,6 +163,66 @@ const datastar = b.dependency("datastar", .{
 exe.root_module.addImport("datastar", datastar.module("datastar"));
 ```
 
+# Web Server ?
+
+This 0.16 Version of the Datastar SDK includes a basic web server and fast radix-tree based router that uses the stdlib server.
+
+You can optionally use this built-in server if you want to start experiminting with Zig 0.16-dev, as it has no other dependencies outside of stdlib.
+
+To use the built in HTTP server :
+
+```zig 
+const std = @import("std");
+const datastar = @import("datastar");
+const HTTPRequest = datastar.HTTPRequest;
+
+const Io = std.Io;
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    var threaded: Io.Threaded = .init(allocator);
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    // pass an IO, an allocator, an address, and a port number to listen on
+    var server = try datastar.Server.init(io, allocator, "0.0.0.0", 8080);
+    defer server.deinit();
+
+    // Add some routes with different http methods
+    const r = server.router;
+    try r.get("/", index);
+    try r.get("/text-html", textHtml);
+    try r.get("/patch", patchElements);
+    try r.post("/patch/opts", patchElementsOpts);
+    try r.get("/code/:snip", code);
+
+    std.debug.print("Server listening on http://localhost:8080\n", .{});
+    try server.run();
+}
+
+// all handlers receive a single HTTPRequest param
+fn index(http: HTTPRequest) !void {
+    // http has verbs such as html() to send HTML, json() to send JSON, etc
+    return try http.html(@embedFile("index.html"));
+}
+
+fn patchElements(http: HTTPRequest) !void {
+    // here we call NewSSE() on the http request, which sets this into 
+    // event-stream mode.
+    var buf: [1024]u8 = undefined;
+    var sse = try datastar.NewSSE(http, &buf);
+    defer sse.close(); // Sends off the SSE event stream, and closes the connection
+
+    try sse.patchElementsFmt(
+        \\<p id="mf-patch">This is update number {d}</p>
+    ,
+        .{getCountAndIncrement()},
+        .{},
+    );
+}
+```
 
 # Functions
 

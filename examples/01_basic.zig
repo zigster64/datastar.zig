@@ -1,11 +1,9 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const datastar = @import("datastar");
 const HTTPRequest = datastar.HTTPRequest;
 const rebooter = @import("rebooter.zig");
 
 const Io = std.Io;
-const Params = datastar.Server.Params;
 
 const PORT = 8080;
 const MAX_THREADS = 2000;
@@ -65,9 +63,7 @@ fn index(http: HTTPRequest) !void {
         std.debug.print("Index elapsed {}(ns)\n", .{t1.read()});
     }
     const html = @embedFile("01_index.html");
-    return try http.req.respond(html, .{
-        .extra_headers = &.{.{ .name = "content-type", .value = "text/html" }},
-    });
+    return http.html(html);
 }
 
 fn textHtml(http: HTTPRequest) !void {
@@ -91,7 +87,7 @@ fn patchElements(http: HTTPRequest) !void {
 
     var buf: [1024]u8 = undefined;
     var sse = try datastar.NewSSE(http, &buf);
-    defer sse.close();
+    defer http.sse(sse);
 
     try sse.patchElementsFmt(
         \\<p id="mf-patch">This is update number {d}</p>
