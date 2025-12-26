@@ -1,37 +1,16 @@
 # Datastar lib for http.zig
 
-A Zig library that conforms to the Datastar SDK specification.
+A Zig library for 0.16 / latest async/concurrent stdlib that conforms to the Datastar SDK specification.
 
 https://github.com/starfederation/datastar/blob/develop/sdk/ADR.md
 
 .. and passes the official test cases.
 
-This SDK uses streams all the way down, so there is no implicit extra allocations.
-
 Versions :
 - Datastar 1.0.0-RC7
-- Zig 0.15.2
+- Zig 0.16.x
 
-It uses the latest "writergate" changes for zig 0.15.2, and makes good use of the high speed buffered 
-interfaces. The SDK is very fast, and very lightweight.
-
-Example apps provided with
-- http.zig
-- tokamak
-- (more to follow)
-
-# Future Updates
-
-Future updates to this repo will include support for Zig stdlib http server, as well as 
-other popular HTTP server libs, such as zzz, zio, and zap.
-
-Waiting on Zig 0.16 to land before this can be complete.
-
-Will provide example apps that demonstrate using this SDK with each of these frameworks 
-as they get ported.
-
-Once this lib is fully generic across multiple frameworks, I will rename it to `datastar.zig` to reflect that.
-
+See Also http://github.com/zigster64/datastar.http.zig for the Datastar SDK for zig 0.15.2 sitting on top of http.zig
 
 # Audience and Scope
 
@@ -214,16 +193,12 @@ const datastar = @import("datastar");
 datastar.readSignals(comptime T: type, req: anytype) !T
 
 // set the connection to SSE, and return an SSE object
-var sse = datastar.NewSSE(req, res) !SSE
-var sse = datastar.NewSSEOpt(req, res, sse_options) !SSE
+var sse = datastar.NewSSE(req) !SSE
+var sse = datastar.NewSSEOpt(req, sse_options) !SSE
 
 // set the connection to SSE, and return an SSE object in Synchronous Write mode
-var sse = datastar.NewSSESync(req, res) !SSE
-defer sse.close(res);
-
-// create an SSE object from an existing open connection
-var sse = NewSSEFromStream(stream, allocator) SSE
-defer sse.deinit();
+var sse = datastar.NewSSESync(req) !SSE
+defer sse.close();
 
 // patch elements function variants
 sse.patchElements(elementsHTML, elements_options) !void
@@ -239,14 +214,6 @@ sse.executeScript(script, script_options) !void
 sse.executeScriptFmt(comptime script, arguments, script_options) !void
 sse.executeScriptWriter(script_options) *std.Io.Writer
 
-// variants of getting an SSE object
-
-// SDK extension - auto pub/sub management
-app.subscribe("topic", sse.stream, someCallbackFunction);
-app.subscribeSession("topic", sse.stream, someCallbackFunction, SessionID);
-app.publish("topic");
-app.publishSession("topic", SessionID); // only publish to subs with this sessionID
-```
 
 # Using the Datastar SDK
 
@@ -255,13 +222,13 @@ app.publishSession("topic", SessionID); // only publish to subs with this sessio
 Calling NewSSE, passing a request and response, will return an object of type SSE.
 
 ```zig
-    pub fn NewSSE(req, res) !SSE 
+    pub fn NewSSE(req) !SSE 
 ```
 
 This will configure the connnection for SSE transfers, and provides an object with Datastar methods for
 patching elements, patching signals, executing scripts, etc.
 
-When you are finished with this SSE object, you must call `sse.close(res)` to finish the handler.
+When you are finished with this SSE object, you must call `sse.close()` to finish the handler.
 
 When running in this default mode (named internally as 'batched mode'), all of the SSE patches are batched
 up, and then passed up to the HTTP library for transmission, and closing the connection.

@@ -45,22 +45,22 @@ pub const ExecuteScriptOptions = struct {
     retry_duration: ?i64 = null,
 };
 
-const SSEMode = enum {
-    batch,
-    sync,
+pub const SSEOptions = struct {
+    buffer_size: usize = 16 * 1024,
 };
 
-const SSEOptions = struct {
-    mode: SSEMode = .batch,
-    buffer_size: usize = 16 * 1024,
+pub const HTTPRequest = struct {
+    req: *std.http.Server.Request,
+    io: Io,
+    arena: std.mem.Allocator,
 };
 
 pub const SSE = struct {
-    stream: std.net.Stream, // so we can create an SSE generator over an existing stream
+    stream: *std.http.BodyWriter,
     output_buffer: std.Io.Writer.Allocating,
     msg: ?Message = null,
-    mode: SSEMode = .batch,
     buffer_size: usize = 16 * 1024,
+    arena: ?std.mem.Allocator,
 
     pub fn deinit(self: *SSE) void {
         self.flush() catch {};
@@ -69,35 +69,20 @@ pub const SSE = struct {
 
     pub fn flush(self: *SSE) !void {
         if (self.msg) |*msg| try msg.end();
-        if (self.mode == .sync) {
-            // in sync mode, bit more work to do yet, as we are responsible
-            // for writing all the converted bytes out to the network, and
-            // doing the chunked encoding ourselves
-            const data = self.output_buffer.written();
-            if (data.len == 0) return;
+        const data = self.output_buffer.written();
+        if (data.len == 0) return;
 
-            var w = self.stream.writer(&.{});
-            try w.interface.print("{x}\r\n", .{data.len});
-            try w.interface.writeAll(data);
-            try w.interface.writeAll("\r\n");
-            try w.interface.flush();
-            _ = self.output_buffer.writer.consume(data.len);
-        }
+        try self.stream.writer.writeAll(data);
+        try self.stream.flush();
+        _ = self.output_buffer.writer.consume(data.len);
     }
 
     /// close() is used for short lived SSE only
     /// on close(), this will populate the response body the call res.write()
     /// which will output both the header and the body using async IO
-    pub fn close(self: *SSE, res: anytype) void {
-        self.flush() catch {};
-        if (self.mode == .sync) {
-            var w = self.stream.writer(&.{});
-            w.interface.writeAll("0\r\n\r\n") catch {};
-            w.interface.flush() catch {};
-            self.stream.close();
-        } else {
-            res.body = self.body();
-        }
+    pub fn close(self: *SSE) void {
+        self.stream.writer.writeAll(self.body()) catch {};
+        self.stream.end() catch {};
     }
 
     pub fn writer(self: *Message) ?*std.Io.Writer {
@@ -203,51 +188,36 @@ pub const SSE = struct {
     }
 };
 
-pub fn NewSSE(req: anytype, res: anytype) !SSE {
-    return NewSSEOpt(req, res, .{});
+pub fn NewSSE(http: HTTPRequest, buf: []u8) !SSE {
+    return NewSSEOpt(http, buf, .{});
 }
 
-pub fn NewSSESync(req: anytype, res: anytype) !SSE {
-    return NewSSEOpt(req, res, .{ .mode = .sync });
-}
-
-pub fn NewSSEOpt(_: anytype, res: anytype, opt: SSEOptions) !SSE {
-    res.content_type = .EVENTS;
-    res.headers.add("Cache-Control", "no-cache");
-    res.headers.add("Connection", "keep-alive");
-
-    // For Batch mode SSE
-    //   the header and body are both written out when sse.close(res) is called,
-    //   which uses the async writer, no chunking, and a known content length
-    // For Sync mode SSE
-    //   we take ownership of the socket, and disconnect it from the async routines
-    //   then set chunked encoding, and apply chunking manually in the sse object
-    if (opt.mode == .sync) {
-        res.headers.add("Transfer-Encoding", "chunked");
-        try res.conn.blockingMode();
-        try res.writeHeader();
-        try res.disown();
-    }
-
+pub fn NewSSEOpt(http: HTTPRequest, buf: []u8, opt: SSEOptions) !SSE {
+    var res = try http.req.respondStreaming(
+        buf,
+        .{ .respond_options = .{ .extra_headers = &.{
+            .{ .name = "content-type", .value = "text/event-stream; charset=UTF-8" },
+            .{ .name = "cache-control", .value = "no-cache" },
+        } } },
+    );
     const allocating_writer = blk: {
-        if (opt.mode == .sync or opt.buffer_size == 0) break :blk std.Io.Writer.Allocating.init(res.arena);
-        break :blk std.Io.Writer.Allocating.initCapacity(res.arena, opt.buffer_size) catch std.Io.Writer.Allocating.init(res.arena);
+        if (opt.buffer_size == 0) break :blk std.Io.Writer.Allocating.init(http.arena);
+        break :blk std.Io.Writer.Allocating.initCapacity(http.arena, opt.buffer_size) catch std.Io.Writer.Allocating.init(http.arena);
     };
     return SSE{
-        .stream = res.conn.stream,
+        .stream = &res,
+        .arena = http.arena,
         .output_buffer = allocating_writer,
-        .mode = opt.mode,
         .buffer_size = opt.buffer_size,
     };
 }
 
-pub fn NewSSEFromStream(stream: std.net.Stream, allocator: std.mem.Allocator) SSE {
+pub fn NewSSEFromStream(stream: *std.http.BodyWriter, allocator: std.mem.Allocator) SSE {
     const allocating_writer = std.Io.Writer.Allocating.initCapacity(allocator, 16 * 1024) catch std.Io.Writer.Allocating.init(allocator);
     return SSE{
         .stream = stream,
         .output_buffer = allocating_writer,
         .buffer_size = 0,
-        .mode = .sync,
     };
 }
 
@@ -736,5 +706,6 @@ pub fn Callback(comptime ctx: type) type {
 }
 
 const std = @import("std");
+const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
