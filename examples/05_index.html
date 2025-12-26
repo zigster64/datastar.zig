@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Virtual Garden - DataStar Subscribe Function</title>
+  <script type="module"
+    src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.7/bundles/datastar.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    body {
+      overflow: hidden;
+      height: calc(100vh - 8rem);
+    }
+
+    .transparent-bg {
+      background: rgb(120, 150, 255, 0.3);
+    }
+
+    pre,
+    code {
+      white-space: pre-line;
+    }
+
+    img {
+      image-rendering: pixelated;
+    }
+
+    .selected {
+      border: 10px solid #88ff99;
+      border-radius: 10px;
+      box-sizing: border-box;
+    }
+
+    .dead {
+      background: black;
+    }
+
+    .dying {
+      background: red;
+    }
+
+    .alive {
+      background: green;
+    }
+
+    .thriving {
+      background: yellow;
+    }
+  </style>
+</head>
+
+<body class="bg-green-900 mt-32" data-signals:hand="'empty'">
+  <!-- Navbar -->
+  <div
+    class="navbar bg-sky-950 text-white shadow-md fixed top-0 left-0 right-0 z-50 h-32 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <span class="btn btn-ghost text-xl text-white block md:hidden">Virtual Garden</span>
+      <span class="btn btn-ghost text-xl text-white hidden md:block">Virtual Garden - SSE Subscribe Functions</span>
+      <a href="http://data-star.dev" target="_">
+        <img class="w-12 sm:w-24"
+          src="https://camo.githubusercontent.com/41305ad22f4e9a19afaee1aaa6d51dd6392894aa80bd3423633b89baccde8d38/68747470733a2f2f646174612d737461722e6465762f7374617469632f696d616765732f726f636b65742d353132783531322e706e67">
+      </a>
+    </div>
+    <div class="avatar">
+      <div class="w-32 h-32 rounded-full">
+        <a href="https://github.com/zigster64/datastar.http.zig/blob/main/examples/05_garden.zig" target="_">
+          <img src="https://avatars.githubusercontent.com/u/72305366?v=4">
+        </a>
+      </div>
+    </div>
+  </div>
+  <button data-signals:info="false" data-on:click="$info = !$info" type="button"
+    class="fixed float-left float-top m-8 w-10 h-10 border-solid border-4 border-gray-200 text-gray-200 cursor-pointer z-20 rounded-sm">
+    i
+  </button>
+  <div data-show="$info" class="fixed flex flex-col justify-center items-center w-full h-full transparent-bg z-10">
+    <div class="mt-12 text-white m-auto p-4 text-center bg-gray-800 rounded-md">
+      <p class="text-xl">This demonstrates using basic pub/sub to easily construct pages with realtime updates</p>
+      <p class="text-xl">Load up multiple browser windows pointing to this page, and tend to the garden, watching it
+        update in each
+        session!</p>
+    </div>
+    <div class="text-white m-auto p-4 text-center bg-gray-800 rounded-md">
+      <h1 class="text-xl"> How to play </h1>
+      <p class="text-xl">Try to keep each plant within its desired range of water, ph levels, and sun exposure to mature
+        to a full crop!</p>
+      <p class="text-xl">Use the bottom tools to change the stats of each plant to keep them in the growing range, or
+        fail to do so and lose out on your plant... :( </p>
+    </div>
+  </div>
+  <div id="crop-counts" class="grid grid-cols-1 grid-row-1 w-fit h-fit float-right"
+    data-signals="{carrots: 0, radishes: 0, gourds: 0, onions: 0}">
+    <div
+      class="flex flex-col justify-center items-center card-body bg-orange-900 border-solid border-gray border-4 rounded-md"
+      id="carrot-counter">
+      <img class="w-18 max-h-18 bg-orange-200 border-solid border-black border-4 p-2 rounded-md"
+        src="./assets/tile006.png">
+      <h2 class="text-xl">
+        Carrots <span class="text-md" data-text="$carrots"></span>
+      </h2>
+    </div>
+    <div
+      class="flex flex-col justify-center items-center card-body bg-orange-900 border-solid border-gray border-4 rounded-md"
+      id="radish-counter">
+      <img class="w-18 h-18 bg-orange-200 border-solid border-black border-4 p-2 rounded-md" src="./assets/tile055.png">
+      <h2 class="text-xl">
+        Radishes <span class="text-md" data-text="$radishes"></span>
+      </h2>
+    </div>
+    <div
+      class="flex flex-col justify-center items-center card-body bg-orange-900 border-solid border-gray border-4 rounded-md"
+      id="gourd-counter">
+      <img class="w-18 h-18 bg-orange-200 border-solid border-black border-4 p-2 rounded-md" src="./assets/tile034.png">
+      <h2 class="text-xl">
+        Gourds <span class="text-md" data-text="$gourds"></span>
+      </h2>
+    </div>
+    <div
+      class="flex flex-col justify-center items-center card-body bg-orange-900 border-solid border-gray border-4 rounded-md"
+      id="onion-counter">
+      <img class="w-18 h-18 bg-orange-200 border-solid border-black border-4 p-2 rounded-md" src="./assets/tile076.png">
+      <h2 class="text-xl">
+        Onions <span class="text-md" data-text="$onions"></span>
+      </h2>
+    </div>
+  </div>
+  <div data-init="@get('/plants')">
+    <div id="plant-list">...Loading Plants</div>
+  </div>
+  <div id="tool-select" class="m-auto flex gap-2 w-4/12 h-2/12 justify-center items-center">
+    <img data-on:click="$hand == 'watering' ? $hand = 'empty' :  $hand = 'watering';"
+      data-class:selected="$hand == 'watering';" class="w-16 rounded-md"
+      src="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fimage.freepik.com%2Ffree-vector%2Fbucket-pixel-art_505135-35.jpg&f=1&nofb=1&ipt=192276e3bed91947cfee0a0e54738b254c8d1171a627d7b60d2afe530239f80c">
+    <img data-on:click="$hand == 'fertilizing' ? $hand = 'empty' :  $hand = 'fertilizing';"
+      data-class:selected="$hand == 'fertilizing';" class="w-16 rounded-md"
+      src="https://t3.ftcdn.net/jpg/15/68/38/56/240_F_1568385603_TbqosPnRViosIviW48X33bYFLwWBL9qT.jpg">
+    <img data-on:click="$hand == 'sunning' ? $hand = 'empty' :  $hand = 'sunning';"
+      data-class:selected="$hand == 'sunning';" class="w-16 rounded-md"
+      src="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fstatic.vecteezy.com%2Fsystem%2Fresources%2Fpreviews%2F036%2F022%2F207%2Foriginal%2Fpixel-art-illustration-sun-pixelated-yellow-sun-yellow-bright-sun-pixelated-for-the-pixel-art-game-and-icon-for-website-and-video-game-old-school-retro-free-vector.jpg&f=1&nofb=1&ipt=3df65989236004f1acbca1b81b8ce37da4c0bce55a339aa71348003d8994a819">
+    <img data-on:click="$hand == 'shovel' ? $hand = 'empty' :  $hand = 'shovel';"
+      data-class:selected="$hand == 'shovel';" class="w-16 rounded-md"
+      src="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fimg.freepik.com%2Fpremium-vector%2Fpixel-art-illustration-shovel-pixelated-shovel-iron-wood-shovel-pixelated-pixel-art-game_1038602-1012.jpg%3Fw%3D2000&f=1&nofb=1&ipt=783fb246a47524a0c9b264ee1bf26da2982f0422c6222cc33fb6963bbca1b2ff">
+    <img data-on:click="$hand == 'carrot' ? $hand = 'empty' :  $hand = 'carrot';"
+      data-class:selected="$hand == 'carrot';" class="w-16 rounded-md"
+      src="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fwww.megavoxels.com%2Fwp-content%2Fuploads%2F2023%2F12%2FPixel-Art-Carrot-6.webp&f=1&nofb=1&ipt=c076de249494c3ae12566b20253100039e3b25435bb499cfbb56430844c280c1">
+    <img data-on:click="$hand == 'onion' ? $hand = 'empty' :  $hand = 'onion';" data-class:selected="$hand == 'onion';"
+      class="w-16 rounded-md"
+      src="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fthumbs.dreamstime.com%2Fb%2Fpixel-art-onion-detailed-shading-vector-icon-design-330385917.jpg&f=1&nofb=1&ipt=6b9938630b882056d78bd47129548af569bf1325e3861f85c2666dca4a695d9a">
+    <img data-on:click="$hand == 'gourd' ? $hand = 'empty' :  $hand = 'gourd';" data-class:selected="$hand == 'gourd';"
+      class="w-16 rounded-md"
+      src="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fstatic.vecteezy.com%2Fsystem%2Fresources%2Fpreviews%2F049%2F045%2F129%2Fnon_2x%2Fgourd-pixel-art-for-your-needs-vector.jpg&f=1&nofb=1&ipt=abf1590dc8eac76e6343f672a720447b48bfa044eac838f735664d8d56d7fd41">
+    <img data-on:click="$hand == 'radish' ? $hand = 'empty' :  $hand = 'radish';"
+      data-class:selected="$hand == 'radish';" class="w-16  rounded-md"
+      src="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fstatic.vecteezy.com%2Fsystem%2Fresources%2Fpreviews%2F063%2F194%2F778%2Fnon_2x%2Fradish-pixel-art-vector.jpg&f=1&nofb=1&ipt=1fccb545ff2cf7a75a126028a27734b8180ebc1a05ecb04a05cd11ad23f8b368">
+  </div>
+
+  <!-- This can be used to view the state of all signals in the current document -->
+  <!-- <pre data-json-signals></pre> -->
+</body>
+
+</html>

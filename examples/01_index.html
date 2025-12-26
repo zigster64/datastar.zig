@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zig DataStar Streaming API</title>
+  <script type="module"
+    src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0-RC.7/bundles/datastar.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    pre,
+    code {
+      white-space: pre-line;
+    }
+
+    body {
+      height: calc(100vh - 128px);
+    }
+  </style>
+</head>
+
+<body class="bg-cyan-700 mt-32">
+  <!-- Navbar -->
+  <div class="navbar bg-sky-950 text-white shadow-md fixed inset-0 z-50 h-32 flex items-center justify-between">
+    <div class="flex items-center gap-4 ">
+      <span class="btn btn-ghost text-xl text-white block md:hidden">DataStar Basic Ops</span>
+      <span class="btn btn-ghost text-xl text-center text-white hidden md:block">DataStar Basic Operations
+        Example<br>v1.0.0-RC7</span>
+      <a href="http://data-star.dev" target="_">
+        <img class="w-12 sm:w-24"
+          src="https://camo.githubusercontent.com/41305ad22f4e9a19afaee1aaa6d51dd6392894aa80bd3423633b89baccde8d38/68747470733a2f2f646174612d737461722e6465762f7374617469632f696d616765732f726f636b65742d353132783531322e706e67">
+      </a>
+    </div>
+    <div class="avatar">
+      <div class="w-32 rounded-full">
+        <a href="https://github.com/zigster64/datastar.http.zig" target="_">
+          <img src="https://avatars.githubusercontent.com/u/72305366?v=4">
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!--Navigation controls to reach examples-->
+  <div id="example-nav" class="w-full h-2/12 hidden lg:flex flex-row justify-center items-end gap-2 mx-auto">
+    <a class="text-xl text-center p-4 rounded-md bg-blue-400 border-solid border-gray-700 border-2"
+      href="#text-html-page" title="text/html">1<br><small>HTML</small></a>
+    <a class="text-xl text-center p-4 rounded-md bg-blue-400 border-solid border-gray-700 border-2"
+      href="#patch-elem-page" title="Patch Elements">2<br><small>PatchEl</small></a>
+    <a class="text-xl text-center p-4 rounded-md bg-blue-400 border-solid border-gray-700 border-2"
+      href="#patch-elem-opt-page" title="Patch Elements With Options">3<br><small>PatchElOpt</small></a>
+    <a class="text-xl text-center p-4 rounded-md bg-blue-400 border-solid border-gray-700 border-2"
+      href="#json-signals-page" title="JSON Signals">4<br><small>Json</small></a>
+    <a class="text-xl text-center p-4 rounded-md bg-blue-400 border-solid border-gray-700 border-2"
+      href="#patch-signals-page" title="Patch Signals">5<br><small>PatchSig</small></a>
+    <a class="text-xl text-center p-4 rounded-md bg-blue-400 border-solid border-gray-700 border-2"
+      href="#patch-signals-if-missing-page" title="Patch Signals If Missing">6<br><small>PatchSigMissing</small></a>
+    <a class="text-xl text-center p-4 rounded-md bg-blue-400 border-solid border-gray-700 border-2"
+      href="#patch-signals-remove-page" title="Patch Signals - Remove">7<br><small>SignalRemove</small></a>
+    <a class="text-xl text-center p-4 rounded-md bg-blue-400 border-solid border-gray-700 border-2"
+      href="#execute-script-page" title="Execute Script">8<br><small>Script</small></a>
+    <a class="text-xl text-center p-4 rounded-md bg-blue-400 border-solid border-gray-700 border-2"
+      href="#svg-morph-page" title="Svg Morph">9<br><small>SVG</small></a>
+    <a class="text-xl text-center p-4 rounded-md bg-blue-400 border-solid border-gray-700 border-2"
+      href="#mathml-morph-page" title="MathML Morph">10<br><small>MathML</small></a>
+  </div>
+  <!--carousel container-->
+  <div class="carousel rounded-box w-screen h-3/4">
+    <div id="text-html-page" class="carousel-item w-full h-full flex justify-center items-center">
+      <div class="card w-8/12 bg-slate-300 card-lg shadow-sm m-auto">
+        <div class="card-body">
+          <h2 class="card-title">(1) text/html Update</h2>
+          <p id="text-html">Click the button to update this content from a simple text/html output</p>
+          <div class="justify-end card-actions">
+            <button class="btn btn-primary" data-on:click="@get('/text-html')">text/html Update</button>
+          </div>
+        </div>
+        <details class="collapse bg-base-100 border-base-300 border">
+          <summary class="collapse-title font-semibold">Show Code</summary>
+          <div class="collapse-content text-sm" data-init="@get('/code/1')">
+            <div id='code-1' class='mockup-code w-full'></div>
+          </div>
+        </details>
+      </div>
+    </div>
+    <div id="patch-elem-page" class="carousel-item w-full h-full flex justify-center items-center">
+      <div class="card w-8/12 bg-slate-300 card-lg shadow-sm m-auto">
+        <div class="card-body">
+          <h2 class="card-title">(2) PatchElements using SSE</h2>
+          <p id="mf-patch">Click the button to use PatchElements to update this content using <i>.outer</i></p>
+          <div class="justify-end card-actions">
+            <button class="btn btn-primary" data-on:click="@get('/patch')">Patch
+              Morph</button>
+          </div>
+        </div>
+        <details class="collapse bg-base-100 border-base-300 border">
+          <summary class="collapse-title font-semibold">Show Code</summary>
+          <div class="collapse-content text-sm" data-init="@get('/code/2')">
+            <div id='code-2' class='mockup-code w-full'></div>
+          </div>
+        </details>
+      </div>
+    </div>
+    <div id="patch-elem-opt-page" class="carousel-item w-full flex justify-center items-center">
+      <div class="card w-8/12 bg-slate-300 card-lg shadow-sm m-auto">
+        <div class="card-body" id="patch-element-card">
+          <h2 class="card-title">(3) PatchElements using SSE with Options</h2>
+          <p id="mf-patch-opts" class="border-1">Click the button to use PatchElements to update this content using
+            different options</p>
+          <p>Select Morph Options</p>
+          <div class="grid-cols-2">
+            <div>
+              <select data-bind:morph>
+                <option value="replace">Replace</option>
+                <option value="prepend">Prepend Child</option>
+                <option value="append">Append Child</option>
+                <option value="before">Before Sibling</option>
+                <option value="after">After Sibling</option>
+                <option value="remove">Remove</option>
+              </select>
+            </div>
+          </div>
+          <div class="justify-end card-actions">
+            <button class="btn btn-warning" data-on:click="@get('/patch/opts/reset')">Reset</button>
+            <button class="btn btn-primary" data-on:click="@get('/patch/opts')">Patch With Options</button>
+          </div>
+          <details class="collapse bg-base-100 border-base-300 border">
+            <summary class="collapse-title font-semibold">Show Code</summary>
+            <div class="collapse-content text-sm" data-init="@get('/code/3')">
+              <div id='code-3' class='mockup-code w-full'></div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+    <div id="json-signals-page" class="carousel-item w-full flex justify-center items-center">
+      <div class="card w-8/12 bg-slate-300 card-lg shadow-sm m-auto">
+        <div class="card-body">
+          <h2 class="card-title">(4) Patch Signals using JSON</h2>
+          <p class="border-1">Click the button to use JSON to update the signals on the
+            card</p>
+          <input type="text" placeholder="fooj" data-bind:fooj />
+          <input type="text" placeholder="barj" data-bind:barj />
+          <div class="justify-end card-actions">
+            <button class="btn btn-primary" data-on:click="@get('/patch/json')">JSON Update</button>
+          </div>
+          <code class="border-1 bg-gray-400" data-json-signals></code>
+          <details class="collapse bg-base-100 border-base-300 border">
+            <summary class="collapse-title font-semibold">Show Code</summary>
+            <div class="collapse-content text-sm" data-init="@get('/code/4')">
+              <div id='code-4' class='mockup-code w-full'></div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+    <div id="patch-signals-page" class="carousel-item w-full flex justify-center items-center">
+      <div class="card w-8/12 bg-slate-300 card-lg shadow-sm m-auto">
+        <div class="card-body">
+          <h2 class="card-title">(5) Patch Signals using SSE</h2>
+          <p class="border-1">Click the button to use PatchSignals to update the signals on the
+            card</p>
+          <input type="text" placeholder="foo" data-bind:foo />
+          <input type="text" placeholder="bar" data-bind:bar />
+          <div class="justify-end card-actions">
+            <button class="btn btn-primary" data-on:click="@get('/patch/signals')">Patch Signals</button>
+          </div>
+          <code class="border-1 bg-gray-400" data-json-signals></code>
+          <details class="collapse bg-base-100 border-base-300 border">
+            <summary class="collapse-title font-semibold">Show Code</summary>
+            <div class="collapse-content text-sm" data-init="@get('/code/5')">
+              <div id='code-5' class='mockup-code w-full'></div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+    <div id="patch-signals-if-missing-page" class="carousel-item w-full flex justify-center items-center">
+      <div class="card w-8/12 bg-slate-300 card-lg shadow-sm m-auto">
+        <div class="card-body">
+          <h2 class="card-title">(6) Patch Signals using SSE - only if missing</h2>
+          <p class="border-1">Click the button to use PatchSignals to update the signals on the
+            card, but only ones that are missing. so initially thats just 'newfoo' and 'newbar', then nothing updates
+            after that. You can go to test 7 to explicitly remove these signals to test this.</p>
+          <div class="justify-end card-actions">
+            <button class="btn btn-primary" data-on:click="@get('/patch/signals/onlymissing')">Patch Signals if
+              Missing</button>
+          </div>
+          <code class="border-1 bg-gray-400" data-json-signals></code>
+          <details class="collapse bg-base-100 border-base-300 border">
+            <summary class="collapse-title font-semibold">Show Code</summary>
+            <div class="collapse-content text-sm" data-init="@get('/code/6')">
+              <div id='code-6' class='mockup-code w-full'></div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+    <div id="patch-signals-remove-page" class="carousel-item w-full flex justify-center items-center">
+      <div class="card w-8/12 bg-slate-300 card-lg shadow-sm m-auto">
+        <div class=" card-body">
+          <h2 class="card-title">(7) Patch Signals using SSE - Remove</h2>
+          <p class="border-1">Click the button to use PatchSignals to remove signals</p>
+          <code class="border-1 bg-gray-400" data-json-signals></code>
+          <p class="border-1">WARNING - with the current design of D*, deleting signals will break all bindings and
+            references to the deleted signal.
+            <br>So only delete signals if you also patch the DOM to remove referenced signals
+            <br>Otherwise, consider setting the signal to '' if you just want to blank the value out
+          </p>
+          <div class="justify-end card-actions">
+            <button class="btn btn-primary" data-on:click="@get('/patch/signals/remove/newfoo')">Remove Signal
+              'newfoo'</button>
+            <button class="btn btn-primary" data-on:click="@get('/patch/signals/remove/newbar')">Remove Signal
+              'newbar'</button>
+          </div>
+          <details class="collapse bg-base-100 border-base-300 border">
+            <summary class="collapse-title font-semibold">Show Code</summary>
+            <div class="collapse-content text-sm" data-init="@get('/code/7')">
+              <div id='code-7' class='mockup-code w-full'></div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+    <div id="execute-script-page" class="carousel-item w-full flex justify-center items-center">
+      <div class="card w-8/12 bg-slate-300 card-lg shadow-sm m-auto">
+        <div class=" card-body">
+          <h2 class="card-title">(8) Execute Script using SSE</h2>
+          <p class="border-1">WIP - Click the button to execute the below script! Check the window to see if it worked!
+          </p>
+          <code class="border-1 bg-gray-400">console.log('Running from executescript!');</code>
+          <div class="justify-end card-actions">
+            <button class="btn btn-primary" data-on:click="@get('/executescript/1')">Execute Script</button>
+          </div>
+          <code class="border-1 bg-gray-400">
+            parent = document.querySelector('#execute-script-page');
+            console.log(parent.outerHTML);
+          </code>
+          <div class="justify-end card-actions">
+            <button class="btn btn-primary" data-on:click="@get('/executescript/2')">Execute Script using
+              Writer</button>
+          </div>
+          <div class="justify-end card-actions">
+            <button class="btn btn-warning" data-on:click="@get('/executescript/3')">Execute Script using formatted
+              print</button>
+          </div>
+          <details class="collapse bg-base-100 border-base-300 border">
+            <summary class="collapse-title font-semibold">Show Code</summary>
+            <div class="collapse-content text-sm" data-init="@get('/code/8')">
+              <div id='code-8' class='mockup-code w-full'></div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+    <div id="svg-morph-page" class="carousel-item w-full h-full flex justify-center items-center">
+      <div class="card w-8/12 bg-slate-300 card-lg shadow-sm m-auto">
+        <div class="card-body items-center text-center">
+          <h2 class="card-title text-neutral">(9) SVG Namespace Morphing</h2>
+
+          <div class="bg-white p-4 rounded-xl shadow-inner my-4">
+            <svg id="svg-stage" viewBox="0 0 200 200" class="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+              <circle id="svg-circle" cx="50" cy="50" r="40" class="fill-red-500 transition-all duration-500" />
+
+              <rect id="svg-square" x="110" y="10" width="80" height="80"
+                class="fill-green-500 transition-all duration-500" />
+
+              <polygon id="svg-triangle" points="100,110 150,190 50,190"
+                class="fill-blue-500 transition-all duration-500" />
+            </svg>
+          </div>
+
+          <p class="text-sm opacity-70">patchElements.namespace = .svg to morph SVG children</p>
+
+          <div class="justify-end card-actions w-full">
+            <div class="w-full max-w-xs">
+              Iterations
+              <input type="range" min="1" max="100" value="1" class="range" step="1" data-bind:svg-morph />
+              <div class="flex justify-between px-2.5 mt-2 text-xs">
+                <span>|</span>
+                <span>|</span>
+                <span>|</span>
+                <span>|</span>
+                <span>|</span>
+              </div>
+              <div class="flex justify-between px-2.5 mt-2 text-xs">
+                <span>1</span>
+                <span>25</span>
+                <span>50</span>
+                <span>75</span>
+                <span>100</span>
+              </div>
+            </div>
+            <button class="btn btn-primary w-full" data-on:click="@get('/svg-morph')">
+              Morph SVG Elements
+            </button>
+          </div>
+        </div>
+
+        <details class="collapse bg-base-100 border-base-300 border">
+          <summary class="collapse-title font-semibold">Show Code</summary>
+          <div class="collapse-content text-sm" data-init="@get('/code/9')">
+            <div id='code-9' class='mockup-code w-full'></div>
+          </div>
+        </details>
+      </div>
+    </div>
+    <div id="mathml-morph-page" class="carousel-item w-full h-full flex justify-center items-center">
+      <div class="card w-10/12 bg-slate-300 card-lg shadow-sm m-auto">
+        <div class="card-body items-center text-center">
+          <h2 class="card-title text-neutral">(10) MathML Namespace Morphing</h2>
+          <div
+            class="w-full max-w-md aspect-video bg-white p-8 rounded-xl shadow-inner my-4 flex justify-center items-center text-3xl overflow-hidden transition-duration-500">
+            <math id="math-ml" display="block" class="animate-in fade-in duration-500">
+              <mrow>
+                <mi>E</mi>
+                <mo>=</mo>
+                <mi>m</mi>
+                <msup>
+                  <mi>c</mi>
+                  <mn id="math-factor">2</mn>
+                </msup>
+              </mrow>
+            </math>
+          </div>
+
+          <p class="text-sm opacity-70">patchElements.namespace = .mathml to morph MathML children</p>
+
+          <div class="justify-end card-actions w-full">
+            <div class="w-full max-w-xs">
+              Spin for Random Equation
+              <input type="range" min="1" max="20" value="1" class="range" step="1" data-bind:mathml-morph
+                data-on:change="@get('/mathml-morph')">
+              <div class="flex justify-between px-2.5 mt-2 text-xs">
+                <span>|</span>
+                <span>|</span>
+                <span>|</span>
+                <span>|</span>
+                <span>|</span>
+              </div>
+              <div class="flex justify-between px-2.5 mt-2 text-xs">
+                <span>1</span>
+                <span>5</span>
+                <span>10</span>
+                <span>15</span>
+                <span>20</span>
+              </div>
+            </div>
+            <button class="btn btn-primary w-full" data-on:click="@get('/mathml-morph')">
+              Morph MATHML Elements
+            </button>
+          </div>
+        </div>
+
+        <details class="collapse bg-base-100 border-base-300 border">
+          <summary class="collapse-title font-semibold">Show Code</summary>
+          <div class="collapse-content text-sm" data-init="@get('/code/10')">
+            <div id='code-10' class='mockup-code w-full'></div>
+          </div>
+        </details>
+      </div>
+    </div> // end svg morph
+  </div>
+  <!-- top header div is fixed height 32, so place this 2 below ... hacky but works -->
+  <!--<div class="hero min-h-screen bg-cover bg-center bg-no-repeat relative"> Your real content goes here -->
+  <!-- 	<div class="relative z-10">-->
+  <!-- 		<div class="flex-col items-start">-->
+  <!-- 		</div>-->
+  <!-- 	</div>-->
+  <!-- </div>-->
+
+</body>
+
+</html>

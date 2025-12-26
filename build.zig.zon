@@ -1,0 +1,28 @@
+.{
+    .name = .datastar_http_zig,
+    .version = "0.1.0",
+    .fingerprint = 0xf20f4288559cebf1, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        .httpz = .{
+            .url = "git+https://github.com/karlseguin/http.zig#2965722dcf9fd656f218fdbd76f4ced0f376bd0d",
+            .hash = "httpz-0.0.0-PNVzrLwlBwCjuWNaokqbQwrsstWT3c_4yb-8TNuYOFcZ",
+            .lazy = true,
+        },
+        .logz = .{
+            .url = "git+https://github.com/karlseguin/log.zig?ref=master#cc5268932e84da9dad09fd48b544d67212889c02",
+            .hash = "logz-0.0.0-O9YWXrJKAgBA98lbuTKXADVOR1ULzRGLMzrj1dkduNAF",
+            .lazy = true,
+        },
+        .tokamak = .{
+            .url = "git+https://github.com/cztomsik/tokamak?ref=main#a8010432a642298461e98c7d90d737247feeaeb5",
+            .hash = "tokamak-2.0.0-FbnSeVOmBgC_0KOptR5fHV4GBxw1zqdx9ZqFzVUTl22W",
+            .lazy = true,
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
