@@ -211,8 +211,7 @@ fn index(http: HTTPRequest) !void {
 fn patchElements(http: HTTPRequest) !void {
     // here we call NewSSE() on the http request, which sets this into 
     // event-stream mode.
-    var buf: [1024]u8 = undefined;
-    var sse = try datastar.NewSSE(http, &buf);
+    var sse = try datastar.NewSSE(http);
     defer sse.close(); // Sends off the SSE event stream, and closes the connection
 
     try sse.patchElementsFmt(
@@ -235,12 +234,8 @@ const datastar = @import("datastar");
 datastar.readSignals(comptime T: type, req: anytype) !T
 
 // set the connection to SSE, and return an SSE object
-var sse = datastar.NewSSE(req) !SSE
-var sse = datastar.NewSSEOpt(req, sse_options) !SSE
-
-// set the connection to SSE, and return an SSE object in Synchronous Write mode
-var sse = datastar.NewSSESync(req) !SSE
-defer sse.close();
+var sse = datastar.NewSSE(http) !SSE
+var sse = datastar.NewSSEOpt(http, sse_options) !SSE
 
 // patch elements function variants
 sse.patchElements(elementsHTML, elements_options) !void
@@ -261,10 +256,10 @@ sse.executeScriptWriter(script_options) *std.Io.Writer
 
 ## The SSE Object
 
-Calling NewSSE, passing a request and response, will return an object of type SSE.
+Calling NewSSE, passing a HTTPRequest, will return an object of type SSE.
 
 ```zig
-    pub fn NewSSE(req) !SSE 
+    pub fn NewSSE(http) !SSE 
 ```
 
 This will configure the connnection for SSE transfers, and provides an object with Datastar methods for
@@ -284,17 +279,11 @@ in the handler. Because actual network updates are batched till the end, everyth
 Finally, there is a NewSSE variant that takes a set of options, for special cases
 
 ```zig
-    pub fn NewSSEOpt(req, res, SSEOptions) !SSE
+    pub fn NewSSEOpt(http, SSEOptions) !SSE
 
     // Where options are 
     const SSEOptions = struct {
-        mode: SSEMode = .batch,
         buffer_size: usize = 16 * 1024, // internal buffer size for batched mode
-    };
-
-    const SSEMode = enum {
-        batch, // batch up output in memory, and sort it out at the end of the handler
-        sync,  // use chunked encoding and output patches on the wire as soon as they are called
     };
 ```
 
@@ -332,7 +321,7 @@ Example :
 
 The SDK Provides 3 functions to patch elements over SSE.
 
-These are all member functions of the SSE type that NewSSE(req, res) returns.
+These are all member functions of the SSE type that NewSSE(http) returns.
 
 
 ```zig
@@ -397,8 +386,8 @@ Example handler (from `examples/01_basic.zig`)
 
 ```zig
 fn patchElements(req: *httpz.Request, res: *httpz.Response) !void {
-    var sse = try datastar.NewSSE(req, res);
-    defer sse.close(res);
+    var sse = try datastar.NewSSE(http);
+    defer sse.close();
 
     try sse.patchElementsFmt(
         \\<p id="mf-patch">This is update number {d}</p>
@@ -413,7 +402,7 @@ fn patchElements(req: *httpz.Request, res: *httpz.Response) !void {
 
 The SDK provides 2 functions to patch signals over SSE.
 
-These are all member functions of the SSE type that NewSSE(req, res) returns.
+These are all member functions of the SSE type that NewSSE(http) returns.
 
 ```zig
     pub fn patchSignals(self: *SSE, value: anytype, json_opt: std.json.Stringify.Options, opt: PatchSignalsOptions) !void
@@ -437,8 +426,8 @@ Use `patchSignalsWriter` to return a std.Io.Writer object that you can programma
 Example handler (from `examples/01_basic.zig`)
 ```zig
 fn patchSignals(req: *httpz.Request, res: *httpz.Response) !void {
-    var sse = try datastar.NewSSE(req, res);
-    defer sse.close(res);
+    var sse = try datastar.NewSSE(http);
+    defer sse.close();
 
     const foo = prng.random().intRangeAtMost(u8, 0, 255);
     const bar = prng.random().intRangeAtMost(u8, 0, 255);
@@ -486,8 +475,8 @@ Example handler (from `examples/01_basic.zig`)
 fn executeScript(req: *httpz.Request, res: *httpz.Response) !void {
     const value = req.param("value"); // can be null
 
-    var sse = try datastar.NewSSE(req, res);
-    defer sse.close(res);
+    var sse = try datastar.NewSSE(http);
+    defer sse.close();
 
     try sse.executeScriptFmt("console.log('You asked me to print {s}')"", .{
             value orelse "nothing at all",
