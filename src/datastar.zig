@@ -52,15 +52,17 @@ pub const ExecuteScriptOptions = struct {
     retry_duration: ?i64 = null,
 };
 
+const DEFAULT_BUFFER_SIZE = 16 * 1024;
+
 pub const SSEOptions = struct {
-    buffer_size: usize = 16 * 1024,
+    buffer_size: usize = DEFAULT_BUFFER_SIZE,
 };
 
 pub const SSE = struct {
     stream: *std.http.BodyWriter,
     output_buffer: std.Io.Writer.Allocating,
     msg: ?Message = null,
-    buffer_size: usize = 16 * 1024,
+    buffer_size: usize = DEFAULT_BUFFER_SIZE,
     arena: ?std.mem.Allocator,
 
     pub fn deinit(self: *SSE) void {
@@ -207,6 +209,7 @@ pub fn NewSSEOpt(http: Server.HTTPRequest, buf: []u8, opt: SSEOptions) !SSE {
         if (opt.buffer_size == 0) break :blk std.Io.Writer.Allocating.init(http.arena);
         break :blk std.Io.Writer.Allocating.initCapacity(http.arena, opt.buffer_size) catch std.Io.Writer.Allocating.init(http.arena);
     };
+
     return SSE{
         .stream = res,
         .arena = http.arena,
@@ -216,7 +219,7 @@ pub fn NewSSEOpt(http: Server.HTTPRequest, buf: []u8, opt: SSEOptions) !SSE {
 }
 
 pub fn NewSSEFromStream(stream: *std.http.BodyWriter, allocator: std.mem.Allocator) SSE {
-    const allocating_writer = std.Io.Writer.Allocating.initCapacity(allocator, 16 * 1024) catch std.Io.Writer.Allocating.init(allocator);
+    const allocating_writer = std.Io.Writer.Allocating.initCapacity(allocator, 4 * 1024) catch std.Io.Writer.Allocating.init(allocator);
     return SSE{
         .stream = stream,
         .output_buffer = allocating_writer,

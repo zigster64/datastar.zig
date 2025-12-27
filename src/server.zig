@@ -141,11 +141,8 @@ pub fn run(self: *Server) !void {
 
 // Added 'router' to the arguments
 fn handleConnection(self: *Server, conn: Io.net.Stream) void {
-    var arena: std.heap.ArenaAllocator = .init(self.allocator);
-    const arena_alloc = arena.allocator();
     defer {
         conn.close(self.io);
-        arena.deinit();
     }
 
     var read_buffer: [4096]u8 = undefined;
@@ -162,11 +159,14 @@ fn handleConnection(self: *Server, conn: Io.net.Stream) void {
             return;
         };
 
+        var arena: std.heap.ArenaAllocator = .init(self.allocator);
+        defer arena.deinit();
+
         // Wrap the standard request into your Datastar HTTPRequest struct
         var http = HTTPRequest{
             .io = self.io,
             .req = &request,
-            .arena = arena_alloc,
+            .arena = arena.allocator(),
             .params = .{},
         };
 
