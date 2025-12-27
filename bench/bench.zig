@@ -43,8 +43,7 @@ pub fn sseHandler(http: HTTPRequest) !void {
     defer {
         std.debug.print("Zig SSE handler took {} microseconds\n", .{t1.read() / std.time.ns_per_ms});
     }
-    var buf: [1024]u8 = undefined;
-    var sse = try datastar.NewSSE(http, &buf);
+    var sse = try datastar.NewSSE(http);
     defer sse.close();
 
     try sse.patchElements(@embedFile("index.html"), .{});

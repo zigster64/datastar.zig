@@ -6,7 +6,6 @@ const rebooter = @import("rebooter.zig");
 const Io = std.Io;
 
 const PORT = 8080;
-const MAX_THREADS = 100;
 
 var update_count: usize = 1;
 var update_mutex: std.Thread.Mutex = .{};
@@ -31,7 +30,6 @@ pub fn main() !void {
     // from heavy threads to coroutines
     var threaded: Io.Threaded = .init(allocator);
     defer threaded.deinit();
-    threaded.setAsyncLimit(std.Io.Limit.limited64(MAX_THREADS));
     const io = threaded.io();
 
     try rebooter.start(io, allocator);
@@ -52,6 +50,7 @@ pub fn main() !void {
     try r.post("/patch/opts", patchElementsOpts);
     try r.post("/patch/opts/reset", patchElementsOptsReset);
     try r.get("/patch/json", jsonSignals);
+    try r.get("/patch/signals", patchSignals);
 
     try r.get("/code/:snip", code);
 
@@ -93,8 +92,7 @@ fn patchElements(http: HTTPRequest) !void {
         std.debug.print("patchElements elapsed {}(μs)\n", .{t1.read() / std.time.ns_per_ms});
     }
 
-    var buf: [1024]u8 = undefined;
-    var sse = try datastar.NewSSE(http, &buf);
+    var sse = try datastar.NewSSE(http);
     defer sse.close();
 
     try sse.patchElementsFmt(
@@ -125,8 +123,7 @@ fn patchElementsOpts(http: HTTPRequest) !void {
         return;
     }
 
-    var buf: [1024]u8 = undefined;
-    var sse = try datastar.NewSSE(http, &buf);
+    var sse = try datastar.NewSSE(http);
     defer sse.close();
 
     // read the signals to work out which options to set, checking the name of the
@@ -168,8 +165,7 @@ fn patchElementsOptsReset(http: HTTPRequest) !void {
         std.debug.print("patchElementsOptsReset elapsed {}(μs)\n", .{t1.read() / std.time.ns_per_ms});
     }
 
-    var buf: [1024]u8 = undefined;
-    var sse = try datastar.NewSSE(http, &buf);
+    var sse = try datastar.NewSSE(http);
     defer sse.close();
 
     try sse.patchElements(@embedFile("01_index_opts.html"), .{
@@ -189,6 +185,79 @@ fn jsonSignals(http: HTTPRequest) !void {
     const bar = prng.random().intRangeAtMost(u8, 0, 255);
 
     try http.json(.{ .fooj = foo, .barj = bar });
+}
+
+fn patchSignals(http: HTTPRequest) !void {
+    var t1 = try std.time.Timer.start();
+    defer {
+        std.debug.print("patchSignals elapsed {}(μs)\n", .{t1.read() / std.time.ns_per_ms});
+    }
+
+    // Outputs a formatted patch-signals SSE response to update signals
+    var sse = try datastar.NewSSE(http);
+    defer sse.close();
+
+    const foo = prng.random().intRangeAtMost(u8, 0, 255);
+    const bar = prng.random().intRangeAtMost(u8, 0, 255);
+
+    try sse.patchSignals(.{
+        .foo = foo,
+        .bar = bar,
+    }, .{}, .{});
+}
+
+fn patchSignalsOnlyIfMissing(req: *httpz.Request, res: *httpz.Response) !void {
+    const t1 = std.time.microTimestamp();
+
+    var sse = try datastar.NewSSE(req, res);
+    defer sse.close(res);
+
+    // this will set the following signals
+    const foo = prng.random().intRangeAtMost(u8, 1, 100);
+    const bar = prng.random().intRangeAtMost(u8, 1, 100);
+
+    try sse.patchSignals(
+        .{
+            .newfoo = foo,
+            .newbar = bar,
+        },
+        .{},
+        .{ .only_if_missing = true },
+    );
+
+    try sse.executeScript("console.log('Patched newfoo and newbar, but only if missing');", .{});
+
+    const t2 = std.time.microTimestamp();
+    logz.info().string("event", "patchSignals").int("foo", foo).int("bar", bar).int("elapsed (μs)", t2 - t1).log();
+}
+
+fn patchSignalsRemove(req: *httpz.Request, res: *httpz.Response) !void {
+    const t1 = std.time.microTimestamp();
+
+    const signals_to_remove: []const u8 = req.param("names").?;
+    var names_iter = std.mem.splitScalar(u8, signals_to_remove, ',');
+
+    var sse = try datastar.NewSSE(req, res);
+    defer sse.close(res);
+
+    var w = sse.patchSignalsWriter(.{});
+
+    // Formatting of json payload
+    const first = names_iter.next();
+    if (first) |val| { // If receiving a list, send each signal to be removed
+        var curr = val;
+        _ = try w.write("{");
+        while (names_iter.next()) |next| {
+            try w.print("{s}: null, ", .{curr});
+            curr = next;
+        }
+        try w.print("{s}: null }}", .{curr}); // Hack because trailing comma is not ok in json
+    } else { // Otherwise, send only the single signal to be removed
+        try w.print("{{ {s}: null }}", .{signals_to_remove});
+    }
+
+    const t2 = std.time.microTimestamp();
+    logz.info().string("event", "patchSignalsRemove").string("remove", signals_to_remove).int("elapsed (μs)", t2 - t1).log();
 }
 
 const snippets = [_][]const u8{
@@ -215,8 +284,7 @@ fn code(http: HTTPRequest) !void {
 
     const data = snippets[snip_id - 1];
 
-    var buf: [1024]u8 = undefined;
-    var sse = try datastar.NewSSE(http, &buf);
+    var sse = try datastar.NewSSE(http);
     defer sse.close();
 
     const selector = try std.fmt.allocPrint(http.arena, "#code-{s}", .{snip});
