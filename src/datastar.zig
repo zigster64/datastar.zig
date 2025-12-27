@@ -60,6 +60,7 @@ pub const SSEOptions = struct {
 
 pub const SSE = struct {
     stream: *std.http.BodyWriter,
+    final_out: *std.Io.Writer,
     output_buffer: std.Io.Writer.Allocating,
     msg: ?Message = null,
     buffer_size: usize = DEFAULT_BUFFER_SIZE,
@@ -76,8 +77,13 @@ pub const SSE = struct {
         if (data.len == 0) return;
 
         try self.stream.writer.writeAll(data);
-        try self.stream.flush();
+        try self.stream.writer.flush();
         _ = self.output_buffer.writer.consume(data.len);
+    }
+
+    pub fn sync(self: *SSE) !void {
+        try self.flush();
+        try self.final_out.flush();
     }
 
     /// close() is used for short lived SSE only
@@ -191,39 +197,14 @@ pub const SSE = struct {
     }
 };
 
-// pub fn NewSSE(http: Server.HTTPRequest, buf: []u8) !SSE {
-//     return NewSSEOpt(http, buf, .{});
-// }
-
-// pub fn NewSSEOpt(http: Server.HTTPRequest, buf: []u8, opt: SSEOptions) !SSE {
-//     // need to create a BodyWriter on the heap, because we use it after this
-//     const res = try http.arena.create(std.http.BodyWriter);
-//     res.* = try http.req.respondStreaming(
-//         buf,
-//         .{ .respond_options = .{ .extra_headers = &.{
-//             .{ .name = "content-type", .value = "text/event-stream; charset=UTF-8" },
-//             .{ .name = "cache-control", .value = "no-cache" },
-//         } } },
-//     );
-//     const allocating_writer = blk: {
-//         if (opt.buffer_size == 0) break :blk std.Io.Writer.Allocating.init(http.arena);
-//         break :blk std.Io.Writer.Allocating.initCapacity(http.arena, opt.buffer_size) catch std.Io.Writer.Allocating.init(http.arena);
-//     };
-
-//     return SSE{
-//         .stream = res,
-//         .arena = http.arena,
-//         .output_buffer = allocating_writer,
-//         .buffer_size = opt.buffer_size,
-//     };
-// }
-
 pub fn NewSSE(http: Server.HTTPRequest) !SSE {
     return NewSSEOpt(http, .{});
 }
 
 pub fn NewSSEOpt(http: Server.HTTPRequest, opt: SSEOptions) !SSE {
-    const buf = try http.arena.alloc(u8, DEFAULT_BUFFER_SIZE);
+    const buf_size = if (opt.buffer_size != 0) opt.buffer_size else DEFAULT_BUFFER_SIZE;
+    const buf = try http.arena.alloc(u8, buf_size);
+
     // need to create a BodyWriter on the heap, because we use it after this
     const res = try http.arena.create(std.http.BodyWriter);
     res.* = try http.req.respondStreaming(
@@ -240,6 +221,7 @@ pub fn NewSSEOpt(http: Server.HTTPRequest, opt: SSEOptions) !SSE {
 
     return SSE{
         .stream = res,
+        .final_out = http.req.server.out,
         .arena = http.arena,
         .output_buffer = allocating_writer,
         .buffer_size = opt.buffer_size,

@@ -486,6 +486,20 @@ fn executeScript(req: *httpz.Request, res: *httpz.Response) !void {
 
 # Advanced SSE Topics
 
+## Synchronous Writes 
+
+By default, when you create a `NewSSE(http)`, and do various actions on it such as `patchElements()`, this 
+will buffer up the converted SSE stream, which is then written to the client browser as the request is 
+finalised.
+
+In some cases you may want to do Synchronous Writes to the client browser as each operation is performed in the
+handler.
+
+For example - in the SVGMorph demo, we want to generate a randomized SVG update, then write that to the client 
+browser, then pause for 100ms and repeat, to provide a smooth animation of the SVG.
+
+To flush all the buffers and write the output the client browser inside a handler, use `try sse.sync()` to do this.
+
 ## Namespaces - SVG and MathML (Datastar RC7 feature)
 
 `patchElements()` works great when morphing small fragments into existing DOM content, using the element ID,
