@@ -71,8 +71,7 @@ fn index(http: HTTPRequest) !void {
     defer {
         std.debug.print("Index elapsed {}(ns)\n", .{t1.read()});
     }
-    const html = @embedFile("01_index.html");
-    return http.html(html);
+    return http.html(@embedFile("01_index.html"));
 }
 
 fn textHtml(http: HTTPRequest) !void {
