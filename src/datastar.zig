@@ -194,7 +194,9 @@ pub fn NewSSE(http: Server.HTTPRequest, buf: []u8) !SSE {
 }
 
 pub fn NewSSEOpt(http: Server.HTTPRequest, buf: []u8, opt: SSEOptions) !SSE {
-    var res = try http.req.respondStreaming(
+    // need to create a BodyWriter on the heap, because we use it after this
+    const res = try http.arena.create(std.http.BodyWriter);
+    res.* = try http.req.respondStreaming(
         buf,
         .{ .respond_options = .{ .extra_headers = &.{
             .{ .name = "content-type", .value = "text/event-stream; charset=UTF-8" },
@@ -206,7 +208,7 @@ pub fn NewSSEOpt(http: Server.HTTPRequest, buf: []u8, opt: SSEOptions) !SSE {
         break :blk std.Io.Writer.Allocating.initCapacity(http.arena, opt.buffer_size) catch std.Io.Writer.Allocating.init(http.arena);
     };
     return SSE{
-        .stream = &res,
+        .stream = res,
         .arena = http.arena,
         .output_buffer = allocating_writer,
         .buffer_size = opt.buffer_size,

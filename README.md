@@ -55,10 +55,10 @@ If you just want to quickly install this, and try out the demo programs first, d
 
 ```
 ... get zig 0.15.2 installed on your machine
-git clone https://github.com/zigster64/datastar.http.zig
+git clone https://github.com/zigster64/datastar.zig
 cd datastar.http.zig
 zig build
-./zig-out/bin/example_1
+./zig-out/bin/01_basic
 ```
 
 Then open your browser to http://localhost:8081
@@ -145,7 +145,7 @@ Using http.zig :
 
 To build an application using this SDK
 
-1) Add datastar.http.zig as a dependency in your `build.zig.zon`:
+1) Add datastar.zig as a dependency in your `build.zig.zon`:
 
 ```bash
 zig fetch --save="datastar" "git+https://github.com/zigstser64/datastar.zig#master"

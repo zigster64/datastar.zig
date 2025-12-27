@@ -6,7 +6,7 @@ const rebooter = @import("rebooter.zig");
 const Io = std.Io;
 
 const PORT = 8080;
-const MAX_THREADS = 2000;
+const MAX_THREADS = 100;
 
 var update_count: usize = 1;
 var update_mutex: std.Thread.Mutex = .{};
@@ -50,8 +50,17 @@ pub fn main() !void {
     try r.get("/text-html", textHtml);
     try r.get("/patch", patchElements);
     try r.post("/patch/opts", patchElementsOpts);
+    try r.post("/patch/opts/reset", patchElementsOptsReset);
+    try r.get("/patch/json", jsonSignals);
 
     try r.get("/code/:snip", code);
+
+    // router.get("/patch/signals", patchSignals, .{});
+    // router.get("/patch/signals/onlymissing", patchSignalsOnlyIfMissing, .{});
+    // router.get("/patch/signals/remove/:names", patchSignalsRemove, .{});
+    // router.get("/executescript/:sample", executeScript, .{});
+    // router.get("/svg-morph", svgMorph, .{});
+    // router.get("/mathml-morph", mathMorph, .{});
 
     std.debug.print("Server listening on http://localhost:8080\n", .{});
     try server.run();
@@ -72,7 +81,7 @@ fn textHtml(http: HTTPRequest) !void {
         std.debug.print("TextHTML elapsed {}(μs)\n", .{t1.read() / std.time.ns_per_ms});
     }
 
-    return try http.html(
+    try http.html(
         try std.fmt.allocPrint(http.arena,
             \\<p id="text-html">This is update number {d}</p>
         , .{getCountAndIncrement()}),
@@ -87,7 +96,7 @@ fn patchElements(http: HTTPRequest) !void {
 
     var buf: [1024]u8 = undefined;
     var sse = try datastar.NewSSE(http, &buf);
-    defer http.sse(sse);
+    defer sse.close();
 
     try sse.patchElementsFmt(
         \\<p id="mf-patch">This is update number {d}</p>
@@ -153,6 +162,36 @@ fn patchElementsOpts(http: HTTPRequest) !void {
     }
 }
 
+// Just reset the options form if it gets ugly
+fn patchElementsOptsReset(http: HTTPRequest) !void {
+    var t1 = try std.time.Timer.start();
+    defer {
+        std.debug.print("patchElementsOptsReset elapsed {}(μs)\n", .{t1.read() / std.time.ns_per_ms});
+    }
+
+    var buf: [1024]u8 = undefined;
+    var sse = try datastar.NewSSE(http, &buf);
+    defer sse.close();
+
+    try sse.patchElements(@embedFile("01_index_opts.html"), .{
+        .selector = "#patch-element-card",
+    });
+}
+
+// update signals using plain old JSON response
+fn jsonSignals(http: HTTPRequest) !void {
+    var t1 = try std.time.Timer.start();
+    defer {
+        std.debug.print("jsonSignals elapsed {}(μs)\n", .{t1.read() / std.time.ns_per_ms});
+    }
+
+    // this will set the following signals, by just outputting a JSON response rather than an SSE response
+    const foo = prng.random().intRangeAtMost(u8, 0, 255);
+    const bar = prng.random().intRangeAtMost(u8, 0, 255);
+
+    try http.json(.{ .fooj = foo, .barj = bar });
+}
+
 const snippets = [_][]const u8{
     @embedFile("snippets/code1.zig"),
     @embedFile("snippets/code2.zig"),
@@ -168,7 +207,6 @@ const snippets = [_][]const u8{
 
 fn code(http: HTTPRequest) !void {
     const snip = http.params.get("snip") orelse "1";
-    std.debug.print("code with :snip = {s}\n", .{snip});
     const snip_id = try std.fmt.parseInt(u8, snip, 10);
 
     if (snip_id < 1 or snip_id > snippets.len) {

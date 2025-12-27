@@ -16,10 +16,39 @@ pub const HTTPRequest = struct {
     arena: std.mem.Allocator,
     params: Params,
 
+    // return the given data as text/html
     pub fn html(self: HTTPRequest, data: []const u8) !void {
-        return try self.req.respond(data, .{
+        try self.req.respond(data, .{
             .extra_headers = &.{.{ .name = "content-type", .value = "text/html" }},
         });
+    }
+
+    pub fn htmlFmt(self: HTTPRequest, comptime fmt: []const u8, args: anytype) !void {
+        var buffer: [4096]u8 = undefined;
+
+        var body_writer = try self.req.respondStreaming(&buffer, .{
+            .respond_options = .{
+                .extra_headers = &.{.{ .name = "content-type", .value = "text/html" }},
+            },
+        });
+
+        const w = body_writer.writer();
+        try w.print(fmt, args);
+        try body_writer.end();
+    }
+
+    pub fn json(self: HTTPRequest, data: anytype) !void {
+        // Use a small stack buffer for the body writer
+        var buffer: [4096]u8 = undefined;
+
+        var body_writer = try self.req.respondStreaming(&buffer, .{
+            .respond_options = .{
+                .extra_headers = &.{.{ .name = "content-type", .value = "application/json" }},
+            },
+        });
+
+        try std.json.Stringify.value(data, .{}, &body_writer.writer); // default to minified JSON on the wire
+        try body_writer.end();
     }
 
     pub fn readSignals(self: HTTPRequest, comptime T: type) !T {
