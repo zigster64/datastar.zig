@@ -282,7 +282,6 @@ The full prose walkthrough — batched vs sync writes, hot reload setup, pub/sub
 
 ## Roadmap
 
-- **Split the repo in two.** Extract the generic SDK functions into a dedicated `datastar-sdk-zig` repo so it can be used with any HTTP framework and added to the Datastar official repo. The bundled HTTP server stays here under its own name.
 - **`Io.Evented` migration.** Examples currently use `Io.Threaded`. Work on Evented / io_uring / kqueue / GrandCentralDispatch — ongoing in the 0.17 branch in this repo.
 
 ## More on Datastar
