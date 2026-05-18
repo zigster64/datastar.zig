@@ -1,4 +1,4 @@
-# datastar.zig - ZIO branch
+# datastar.zig - A Web Framework for Zig 0.16
 
 **A Datastar-aware HTTP server for Zig 0.16.** Build reactive web apps where the backend pushes DOM patches, signal updates, and browser scripts to connected clients over a fast SSE pipe. Single binary, no JS bundler, no frontend framework.
 
