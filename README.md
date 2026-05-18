@@ -23,7 +23,7 @@ This repo currently bundles two things that will likely be split into separate r
 1. **A Datastar SDK** — a small set of generic functions for emitting SSE events that any HTTP server can use (`http.zig`, `zap`, `jetzig`, `tokamak`, the stdlib server, etc).
 2. **A Datastar-aware HTTP server** — a complete framework built on `std.http` with a fast radix-tree router and tightly-integrated SSE helpers.
 
-The HTTP server is the mature half today. The generic SDK functions are partially landed (`readSignals` is done; the top-level `patchElements`/`patchSignals`/`executeScript` are stubs pending the API freeze described in the [Roadmap](#roadmap)).
+The HTTP server is the mature half. The generic SDK functions cover the full Datastar wire protocol — see [Generic SDK functions](#generic-sdk-functions).
 
 ## Example
 
@@ -241,29 +241,37 @@ NameSpace = .html | .svg | .mathml
 
 ### Generic SDK functions
 
-These are the framework-agnostic entry points, intended for use with any HTTP server (stdlib, `http.zig`, `zap`, `jetzig`, etc).
-
-**Implemented:**
+Plain transformer functions for use with any HTTP framework — stdlib, [`http.zig`](https://github.com/karlseguin/http.zig), `zap`, `jetzig`, `tokamak`, or whatever else. They take an arena allocator and a payload, and return a freshly-allocated string containing the full SSE event-stream block. You write that string into whatever response body your framework exposes — no further wrapping required.
 
 ```zig
-// Populate a struct from Datastar signals on either a GET query string or POST body
+// Read signals from either a GET query string or a POST body
 datastar.readSignals(comptime T: type, arena: Allocator, req: *std.http.Server.Request) !T
+
+// Patch DOM elements
+datastar.patchElements(arena, html, opts) ![]const u8
+datastar.patchElementsFmt(arena, comptime fmt, args, opts) ![]const u8
+
+// Patch signals (any JSON-serializable value)
+datastar.patchSignals(arena, value, opts) ![]const u8
+
+// Execute a script on the client (wraps the script in a <script> tag and patches it into body)
+datastar.executeScript(arena, script, opts) ![]const u8
+datastar.executeScriptFmt(arena, comptime fmt, args, opts) ![]const u8
 ```
 
-**Planned** (signatures TBD — see [Roadmap](#roadmap)):
+Example wiring into another framework:
 
 ```zig
-datastar.patchElements(arena, html, opts) ![]const u8
-datastar.patchSignals(arena, value, opts) ![]const u8
-datastar.executeScript(arena, script, opts) ![]const u8
+const body = try datastar.patchElements(req.arena, "<div id='hello'>Hi</div>", .{});
+res.header("Content-Type", "text/event-stream");
+try res.write(body);
 ```
 
-These will each accept an arena allocator and return a fully-formatted SSE event-stream string, which the caller writes to whatever response object their HTTP framework uses.
+`readSignals` currently expects a `*std.http.Server.Request`. If your framework hides the underlying request, parse the signals JSON yourself — Datastar passes them either as `?datastar=<url-encoded-json>` on a GET, or as the raw JSON body on POST/PUT/PATCH/DELETE.
 
 ## Roadmap
 
 - **Split the repo in two.** Extract the generic SDK functions into a dedicated `datastar-sdk-zig` repo so it can be used with any HTTP framework. The HTTP server stays here under its own name.
-- **Finish the generic SDK functions.** Implement `patchElements`/`patchSignals`/`executeScript` as `(arena, payload, opts) -> []const u8` so they're trivial to drop into `http.zig`, `zap`, `jetzig`, `tokamak`, or the stdlib server.
 - **`Io.Evented` migration.** Examples currently use `Io.Threaded`. Move to evented IO once it's stable in stdlib.
 - **Performance pass.** Defer until Datastar 1.x is bedded in on Zig 0.16.
 

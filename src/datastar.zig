@@ -90,22 +90,63 @@ pub const ExecuteScriptOptions = struct {
 
 pub const DEFAULT_BUFFER_SIZE = 8 * 1024;
 
-// patchElements / patchSignals / executeScript options off the main datastar namespace to return strings
-// containing the expanded SSE event stream
-pub fn patchElements(arena: Allocator, elements: []const u8, opt: PatchElementsOptions) !void {
-    _ = arena;
-    _ = elements;
-    _ = opt;
+// Framework-agnostic transformer functions.
+//
+// Each one takes an arena allocator, a payload, and the relevant options struct,
+// and returns a freshly-allocated string containing the SSE event-stream payload
+// ready to be written verbatim into whatever response body your HTTP framework exposes.
+//
+// The arena owns the returned slice; free it by resetting/freeing the arena.
+
+pub fn patchElements(arena: Allocator, elements: []const u8, opt: PatchElementsOptions) ![]const u8 {
+    var buf: Io.Writer.Allocating = .init(arena);
+    var msg: Message = .{};
+    msg.init(.patchElements, opt, &buf.writer);
+    try msg.header();
+    try msg.interface.writeAll(elements);
+    try msg.end();
+    return buf.written();
 }
-pub fn patchSignals(arena: Allocator, signals: anytype, opt: PatchSignalsOptions) !void {
-    _ = arena;
-    _ = signals;
-    _ = opt;
+
+pub fn patchElementsFmt(arena: Allocator, comptime elements: []const u8, args: anytype, opt: PatchElementsOptions) ![]const u8 {
+    var buf: Io.Writer.Allocating = .init(arena);
+    var msg: Message = .{};
+    msg.init(.patchElements, opt, &buf.writer);
+    try msg.header();
+    try msg.interface.print(elements, args);
+    try msg.end();
+    return buf.written();
 }
-pub fn executeScript(arena: Allocator, script: []const u8, opt: ExecuteScriptOptions) !void {
-    _ = arena;
-    _ = script;
-    _ = opt;
+
+pub fn patchSignals(arena: Allocator, signals: anytype, opt: PatchSignalsOptions) ![]const u8 {
+    var buf: Io.Writer.Allocating = .init(arena);
+    var msg: Message = .{};
+    msg.init(.patchSignals, opt, &buf.writer);
+    try msg.header();
+    const json_formatter = std.json.fmt(signals, .{});
+    try json_formatter.format(&msg.interface);
+    try msg.end();
+    return buf.written();
+}
+
+pub fn executeScript(arena: Allocator, script: []const u8, opt: ExecuteScriptOptions) ![]const u8 {
+    var buf: Io.Writer.Allocating = .init(arena);
+    var msg: Message = .{};
+    msg.init(.executeScript, opt, &buf.writer);
+    try msg.header();
+    try msg.interface.writeAll(script);
+    try msg.end();
+    return buf.written();
+}
+
+pub fn executeScriptFmt(arena: Allocator, comptime script: []const u8, args: anytype, opt: ExecuteScriptOptions) ![]const u8 {
+    var buf: Io.Writer.Allocating = .init(arena);
+    var msg: Message = .{};
+    msg.init(.executeScript, opt, &buf.writer);
+    try msg.header();
+    try msg.interface.print(script, args);
+    try msg.end();
+    return buf.written();
 }
 
 pub const SSEOptions = struct {
@@ -642,6 +683,108 @@ test "ScriptAttributes can store key-value pairs" {
     try std.testing.expectEqual(2, attrs.count());
     try std.testing.expectEqualStrings("module", attrs.get("type").?);
     try std.testing.expectEqualStrings("true", attrs.get("async").?);
+}
+
+test "patchElements transformer emits SSE event stream" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const out = try patchElements(arena, "<div id='hello'>Hi</div>", .{});
+    try std.testing.expectEqualStrings(
+        "event: datastar-patch-elements\ndata: elements <div id='hello'>Hi</div>\n\n",
+        out,
+    );
+}
+
+test "patchElements transformer honours options" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const out = try patchElements(arena, "<p>x</p>", .{
+        .mode = .inner,
+        .selector = "#main",
+        .view_transition = true,
+        .event_id = "evt-1",
+        .namespace = .svg,
+    });
+    try std.testing.expectEqualStrings(
+        "event: datastar-patch-elements\nid: evt-1\ndata: selector #main\ndata: useViewTransition true\ndata: mode inner\ndata: namespace svg\ndata: elements <p>x</p>\n\n",
+        out,
+    );
+}
+
+test "patchElements transformer prefixes each line of multiline input" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const out = try patchElements(arena, "<div>\n  <p>hi</p>\n</div>", .{});
+    try std.testing.expectEqualStrings(
+        "event: datastar-patch-elements\ndata: elements <div>\ndata: elements   <p>hi</p>\ndata: elements </div>\n\n",
+        out,
+    );
+}
+
+test "patchElementsFmt transformer formats payload" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const out = try patchElementsFmt(arena, "<p id='c'>count {d}</p>", .{42}, .{});
+    try std.testing.expectEqualStrings(
+        "event: datastar-patch-elements\ndata: elements <p id='c'>count 42</p>\n\n",
+        out,
+    );
+}
+
+test "patchSignals transformer emits JSON payload" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const out = try patchSignals(arena, .{ .foo = 42, .bar = "baz" }, .{});
+    try std.testing.expectEqualStrings(
+        "event: datastar-patch-signals\ndata: signals {\"foo\":42,\"bar\":\"baz\"}\n\n",
+        out,
+    );
+}
+
+test "patchSignals transformer honours only_if_missing" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const out = try patchSignals(arena, .{ .x = 1 }, .{ .only_if_missing = true });
+    try std.testing.expectEqualStrings(
+        "event: datastar-patch-signals\ndata: onlyIfMissing true\ndata: signals {\"x\":1}\n\n",
+        out,
+    );
+}
+
+test "executeScript transformer wraps payload in a script tag" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const out = try executeScript(arena, "console.log('hi')", .{});
+    try std.testing.expectEqualStrings(
+        "event: datastar-patch-elements\ndata: mode append\ndata: selector body\ndata: elements <script data-effect=\"el.remove()\">console.log('hi')</script>\n\n",
+        out,
+    );
+}
+
+test "executeScriptFmt transformer formats payload" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const out = try executeScriptFmt(arena, "alert('hi {s}')", .{"world"}, .{ .auto_remove = false });
+    try std.testing.expectEqualStrings(
+        "event: datastar-patch-elements\ndata: mode append\ndata: selector body\ndata: elements <script>alert('hi world')</script>\n\n",
+        out,
+    );
 }
 
 test "PatchElementsOptions with custom values" {
