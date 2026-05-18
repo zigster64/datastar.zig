@@ -12,9 +12,11 @@ A Zig 0.16 SDK for [Datastar](https://data-star.dev) — patch DOM elements, pat
 
 For stable Zig 0.15.2, see [`datastar.http.zig`](https://github.com/zigster64/datastar.http.zig).
 
-## Zig Version
+## Zig Version 0.17
 
-Requires Zig **0.16.0** or newer. Tracks the `0.16.0` release.
+This branch is working on the 0.17-dev zig code ... Wild West time
+
+The point of having a 0.17 branch here is to track changes with the new zig, and hopefully get Io.Evented working using stdlib
 
 ## Table of Contents
 
