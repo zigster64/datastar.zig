@@ -1,8 +1,8 @@
 const std = @import("std");
-pub const pubsub = @import("pubsub");
-
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
+
+pub const pubsub = @import("pubsub");
 
 pub const HTTPServer = @import("server.zig");
 pub const HTTPRequest = HTTPServer.HTTPRequest;
@@ -46,7 +46,40 @@ pub const PatchSignalsOptions = struct {
     retry_duration: ?i64 = null,
 };
 
-pub const ScriptAttributes = std.StringArrayHashMap([]const u8);
+pub const ScriptAttributes = struct {
+    const Map = std.array_hash_map.String([]const u8);
+
+    map: Map = .empty,
+    allocator: Allocator,
+
+    pub fn init(allocator: Allocator) ScriptAttributes {
+        return .{ .allocator = allocator };
+    }
+
+    pub fn deinit(self: *ScriptAttributes) void {
+        self.map.deinit(self.allocator);
+    }
+
+    pub fn put(self: *ScriptAttributes, key: []const u8, value: []const u8) !void {
+        try self.map.put(self.allocator, key, value);
+    }
+
+    pub fn count(self: ScriptAttributes) usize {
+        return self.map.count();
+    }
+
+    pub fn get(self: ScriptAttributes, key: []const u8) ?[]const u8 {
+        return self.map.get(key);
+    }
+
+    pub fn keys(self: ScriptAttributes) [][]const u8 {
+        return self.map.keys();
+    }
+
+    pub fn values(self: ScriptAttributes) [][]const u8 {
+        return self.map.values();
+    }
+};
 
 pub const ExecuteScriptOptions = struct {
     auto_remove: bool = true, // by default remove the script after use, otherwise explicity set this to false if you want to keep the script loaded

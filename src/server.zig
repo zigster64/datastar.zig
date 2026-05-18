@@ -1,18 +1,20 @@
 const std = @import("std");
+const posix = std.posix;
+const Io = std.Io;
+const Allocator = std.mem.Allocator;
+pub const rlim_t = posix.rlim_t;
+const builtin = @import("builtin");
+
 const pubsub = @import("pubsub");
+
 const datastar = @import("datastar.zig");
+pub const HTTPRequest = @import("http_request.zig");
 const Log = @import("log.zig");
+const Params = @import("params.zig");
 const Router = @import("router.zig");
 const RouteHandler = Router.RouteHandler;
 
-const builtin = @import("builtin");
-const posix = std.posix; // probably gonna get deprecated soon ?
-
-pub const HTTPRequest = @import("http_request.zig");
-const Params = @import("params.zig");
-
-const Io = std.Io;
-const Allocator = std.mem.Allocator;
+// probably gonna get deprecated soon ?
 
 const Server = @This();
 
@@ -53,7 +55,6 @@ pub const Config = struct {
 };
 
 // FD limit configuration
-pub const rlim_t = posix.rlim_t;
 pub const FDLimit = enum(rlim_t) {
     max = std.math.maxInt(rlim_t),
     _,
@@ -274,7 +275,7 @@ fn watchLoop(self: *Server) Io.Cancelable!void {
 fn setFdLimits(self: *Server) !void {
     if (self.fd_limit) |fd_limit| {
         // Get current limits
-        var system_limit = try posix.getrlimit(.NOFILE);
+        const system_limit = try posix.getrlimit(.NOFILE);
         var limit = @intFromEnum(fd_limit);
 
         switch (builtin.os.tag) {

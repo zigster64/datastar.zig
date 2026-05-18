@@ -155,7 +155,7 @@ fn postSort(http: *HTTPRequest) !void {
     try app.lock();
     defer app.unlock();
 
-    var opt = try http.readSignals(struct { sort: []const u8 });
+    const opt = try http.readSignals(struct { sort: []const u8 });
     const new_sort: SortType = .fromString(opt.sort);
 
     std.log.info("postSort session {s} has requested sort {t}", .{ session, new_sort });

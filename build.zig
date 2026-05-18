@@ -107,6 +107,7 @@ pub fn build(b: *std.Build) void {
             }),
         });
         exe_check.root_module.addImport("datastar", datastar_module);
+        exe_check.root_module.addOptions("options", options);
         check.dependOn(&exe_check.step); // <--- Add to check
     }
 }

@@ -1,7 +1,7 @@
 .{
     .name = .datastar_zig,
     .version = "0.1.0",
-    .minimum_zig_version = "0.16.0-dev.2193+fc517bd01",
+    .minimum_zig_version = "0.16.0",
     .fingerprint = 0xa2c2b3996211dfe7,
     .dependencies = .{
         .pubsub = .{

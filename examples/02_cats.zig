@@ -1,12 +1,11 @@
 const std = @import("std");
-const datastar = @import("datastar");
-const options = @import("options");
-const HTTPRequest = datastar.HTTPRequest;
-
-const pubsub = datastar.pubsub;
-
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
+
+const datastar = @import("datastar");
+const HTTPRequest = datastar.HTTPRequest;
+const pubsub = datastar.pubsub;
+const options = @import("options");
 
 const PORT = 8082;
 
@@ -26,7 +25,7 @@ pub fn main(init: std.process.Init) !void {
     defer server.deinit();
 
     // Create the global app instance and attach it to the server
-    var app = try App.init(server.io, server.io_fibers orelse server.io, server.allocator);
+    var app = try App.init(server.io, server.allocator);
     defer app.deinit();
     server.useContext(app);
 
@@ -180,8 +179,7 @@ const App = struct {
     mutex: Io.Mutex,
     pubsub: pubsub.PubSub(MQSchema),
 
-    pub fn init(io: Io, pubsub_io: Io, allocator: Allocator) !*App {
-        _ = pubsub_io; // autofix
+    pub fn init(io: Io, allocator: Allocator) !*App {
         const app = try allocator.create(App);
         app.* = .{
             .io = io,
