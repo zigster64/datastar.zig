@@ -66,6 +66,7 @@ Older benchmark numbers on a different day / different setup. Useful for compari
 dont expect to make useful comparisons between different test runs.
 
 | Language | Test Case | Requests/sec | Latency (Avg) | Transfer/sec | Binary/RAM Size |
+| :--- | :--- | :--- | :--- | :--- | :--- |
 | **Zig-0.15.2** | Plain HTML | 39,654 | 5.50ms | **5.61 GB** | 533,672 |
 | **Zig-0.15.2** | **Datastar SSE** 100k payload | **23,777** | **15.99ms** | 4.12 GB | 12.7 MB  |
 | **Zig-0.15.2** | SSE % performance | |  | 73 % | |
