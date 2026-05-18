@@ -1,8 +1,8 @@
 # datastar.zig - A Web Framework for Zig 0.16
 
-**A Datastar-aware HTTP server for Zig 0.16.** Build reactive web apps where the backend pushes DOM patches, signal updates, and browser scripts to connected clients over a fast SSE pipe. Single binary, no JS bundler, no frontend framework.
+**A Datastar-aware HTTP server for Zig 0.16.**
 
-This branch adds an **opt-in `-Dio=zio` build flag** that swaps the stdlib `Io.Threaded` IO implementation for [`lalinsky/zio`](https://github.com/lalinsky/zio) — stackful coroutines instead of OS threads. Background reading: https://lalinsky.com/2026/05/11/async-io-in-zig-016-today.html
+Build realtime collaborative web apps where the backend pushes DOM patches, signal updates, and browser scripts to connected clients over a fast SSE pipe. Single binary, no JS bundler, no frontend framework.
 
 ![Cyberpunk Datastar Zig SDK - Sydney Metro Rail - Leica XV](assets/datastar.zig.jpg)
 
