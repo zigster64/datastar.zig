@@ -80,7 +80,10 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn index(http: *HTTPRequest) !void {
-    return http.htmlFmt(@embedFile("01_index.html"), .{ .hotreload_id = hotreload_id });
+    return http.htmlFmt(@embedFile("01_index.html"), .{
+        .hotreload_id = hotreload_id,
+        .web_server = "Datastar.Zig Web Server",
+    });
 }
 
 fn styleCss(http: *HTTPRequest) !void {

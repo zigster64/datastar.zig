@@ -17,6 +17,16 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const httpz = b.dependency("httpz", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const dusty = b.dependency("dusty", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const datastar_module = b.addModule("datastar", .{
         .root_source_file = b.path("src/datastar.zig"),
         .target = target,
@@ -110,4 +120,60 @@ pub fn build(b: *std.Build) void {
         exe_check.root_module.addOptions("options", options);
         check.dependOn(&exe_check.step); // <--- Add to check
     }
+
+    // Standalone example showing the framework-agnostic SDK functions wired
+    // into karlseguin's http.zig. Built only on demand via `zig build http.zig`.
+    const httpz_example = b.addExecutable(.{
+        .name = "example_1_httpz",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/01_basic_httpz.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    httpz_example.root_module.addImport("datastar", datastar_module);
+    httpz_example.root_module.addImport("httpz", httpz.module("httpz"));
+
+    const httpz_step = b.step("http.zig", "Build the http.zig example to zig-out/bin/example_1_httpz");
+    httpz_step.dependOn(&b.addInstallArtifact(httpz_example, .{}).step);
+
+    // Also include the httpz example in the global `check` step.
+    const httpz_check = b.addExecutable(.{
+        .name = "example_1_httpz",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/01_basic_httpz.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    httpz_check.root_module.addImport("datastar", datastar_module);
+    httpz_check.root_module.addImport("httpz", httpz.module("httpz"));
+    check.dependOn(&httpz_check.step);
+
+    // Same idea for lalinsky/dusty. Built only on demand via `zig build dusty`.
+    const dusty_example = b.addExecutable(.{
+        .name = "example_1_dusty",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/01_basic_dusty.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    dusty_example.root_module.addImport("datastar", datastar_module);
+    dusty_example.root_module.addImport("dusty", dusty.module("dusty"));
+
+    const dusty_step = b.step("dusty", "Build the dusty example to zig-out/bin/example_1_dusty");
+    dusty_step.dependOn(&b.addInstallArtifact(dusty_example, .{}).step);
+
+    const dusty_check = b.addExecutable(.{
+        .name = "example_1_dusty",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/01_basic_dusty.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    dusty_check.root_module.addImport("datastar", datastar_module);
+    dusty_check.root_module.addImport("dusty", dusty.module("dusty"));
+    check.dependOn(&dusty_check.step);
 }

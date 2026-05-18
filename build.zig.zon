@@ -5,9 +5,16 @@
     .fingerprint = 0xa2c2b3996211dfe7,
     .dependencies = .{
         .pubsub = .{
-            // .path = "../pubsub.zig",
-            .url = "git+https://github.com/zigster64/pubsub.zig#a0fef64e3e96dc748a9b6356096b630860c14157",
-            .hash = "pubsub-0.0.0-6dy2AdSuAAAKxoNVt-2zhHsHNeAy1vzLElsIVJ7rVD6Z",
+            .url = "git+https://github.com/zigster64/pubsub.zig#079bf4d94bfe40e91734a84fe418a3f18a0e73b4",
+            .hash = "pubsub-0.0.0-6dy2AZOBAAB1zskJKRdIfdROfrVnp4XW3Rsjn-yPzoXN",
+        },
+        .httpz = .{
+            .url = "git+https://github.com/karlseguin/http.zig#250e208845249e41d48a996dbfb0ce18d2e82761",
+            .hash = "httpz-0.0.0-PNVzrJwbCACCRQFU-_piWqJ_sXHCwxyp4HkHLAyY4msq",
+        },
+        .dusty = .{
+            .url = "git+https://github.com/lalinsky/dusty#28a97b118bf1893a17a47fb77bf6529dd997ad99",
+            .hash = "dusty-0.1.0-Qdw7RqYcCgBfokVHhdXJhX5a7vuSjNx2Yeg-xgcAWSmc",
         },
     },
     .paths = .{

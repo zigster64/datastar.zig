@@ -116,6 +116,8 @@ const datastar = @import("datastar");
 zig build                       # build everything into zig-out/bin
 zig build test                  # run unit tests
 zig build example_1             # run the kitchen-sink demo on :8081
+zig build http.zig              # build the http.zig port of example_1 (opt-in)
+zig build dusty                 # build the dusty port of example_1 (opt-in)
 ./zig-out/bin/validation-test   # serve the Datastar SDK conformance suite on :7331
 ```
 
@@ -128,6 +130,17 @@ Example binaries produced by `zig build`:
 | `example_3`          | WildCat auction with per-session preferences                      |
 | `example_5`          | Multi-player farming sim                                          |
 | `validation-test`    | Server for the official Datastar SDK validation suite             |
+
+### Reference ports to other HTTP frameworks
+
+The same kitchen-sink demo is also wired up to two third-party HTTP frameworks, using only the generic `datastar.patchElements` / `patchSignals` / `executeScript` transformer functions. They double as the canonical reference for plugging the Datastar SDK into any framework.
+
+| Target            | Output binary           | Framework                                                                | Source                              |
+| ----------------- | ----------------------- | ------------------------------------------------------------------------ | ----------------------------------- |
+| `zig build http.zig` | `example_1_httpz`    | [`karlseguin/http.zig`](https://github.com/karlseguin/http.zig)          | `examples/01_basic_httpz.zig`       |
+| `zig build dusty` | `example_1_dusty`       | [`lalinsky/dusty`](https://github.com/lalinsky/dusty)                    | `examples/01_basic_dusty.zig`       |
+
+Both run on the same `:8081` port and serve the same UI as `example_1` — the navbar shows which web server is driving the page.
 
 ## Function Summary
 
@@ -267,13 +280,46 @@ res.header("Content-Type", "text/event-stream");
 try res.write(body);
 ```
 
-`readSignals` currently expects a `*std.http.Server.Request`. If your framework hides the underlying request, parse the signals JSON yourself — Datastar passes them either as `?datastar=<url-encoded-json>` on a GET, or as the raw JSON body on POST/PUT/PATCH/DELETE.
+`readSignals` currently expects a `*std.http.Server.Request`. If your framework hides the underlying request, parse the signals JSON yourself — Datastar passes them either as `?datastar=<url-encoded-json>` on a GET, or as the raw JSON body on POST/PUT/PATCH/DELETE:
+
+```zig
+const Signals = struct { foo: u32, bar: []const u8 };
+
+fn readSignalsAnyFramework(
+    arena: Allocator,
+    method: std.http.Method,
+    query_string: ?[]const u8, // everything after the '?' in the URL, or null
+    body: ?[]const u8,         // request body bytes, or null
+) !Signals {
+    const json = switch (method) {
+        .GET => blk: {
+            const qs = query_string orelse return error.MissingDatastarKey;
+            var it = std.mem.tokenizeScalar(u8, qs, '&');
+            while (it.next()) |pair| {
+                if (std.mem.startsWith(u8, pair, "datastar=")) {
+                    break :blk try datastar.urlDecode(arena, pair["datastar=".len..]);
+                }
+            }
+            return error.MissingDatastarKey;
+        },
+        else => body orelse return error.MissingBody,
+    };
+
+    return std.json.parseFromSliceLeaky(
+        Signals,
+        arena,
+        json,
+        .{ .ignore_unknown_fields = true },
+    );
+}
+```
+
+`datastar.urlDecode` is re-exported for exactly this case.
 
 ## Roadmap
 
-- **Split the repo in two.** Extract the generic SDK functions into a dedicated `datastar-sdk-zig` repo so it can be used with any HTTP framework. The HTTP server stays here under its own name.
-- **`Io.Evented` migration.** Examples currently use `Io.Threaded`. Move to evented IO once it's stable in stdlib.
-- **Performance pass.** Defer until Datastar 1.x is bedded in on Zig 0.16.
+- **Split the repo in two.** Extract the generic SDK functions into a dedicated `datastar-sdk-zig` repo so it can be used with any HTTP framework and added to the Datastar official repo. The HTTP server stays here under its own name.
+- **`Io.Evented` migration.** Examples currently use `Io.Threaded`. Work on Evented / Io-Uring / Kqueue / GrandCentralDispatch - ongoing in the 0.17 branch in this repo.
 
 ## More on Datastar
 
