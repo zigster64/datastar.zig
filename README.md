@@ -4,7 +4,7 @@ A Zig 0.16 SDK for [Datastar](https://data-star.dev) — patch DOM elements, pat
 
 ![Cyberpunk Datastar Zig SDK - Sydney Metro Rail - Leica XV](assets/datastar.zig.jpg)
 
-- **Tiny framework-agnostic surface.** Four functions — `readSignals`, `patchElements`, `patchSignals`, `executeScript` — that take an arena allocator and return ready-to-ship SSE strings. Drop them into the stdlib HTTP server, [`http.zig`](https://github.com/karlseguin/http.zig), [`dusty`](https://github.com/lalinsky/dusty), `zap`, `jetzig`, `tokamak`, or whatever else.
+- **Tiny framework surface.** Four functions — `readSignals`, `patchElements`, `patchSignals`, `executeScript` — that take an arena allocator and return ready-to-ship SSE strings. Drop them into the stdlib HTTP server, [`http.zig`](https://github.com/karlseguin/http.zig), [`dusty`](https://github.com/lalinsky/dusty), `zap`, `jetzig`, `tokamak`, or whatever else.
 - **Full Datastar wire protocol.** Raw + `Fmt` variants, HTML / SVG / MathML namespaces, `view_transition`, `only_if_missing`, custom script attributes, event IDs, retry duration — everything from the [Datastar SDK ADR](https://github.com/starfederation/datastar/blob/develop/sdk/ADR.md).
 - **Passes the official Datastar validation suite.**
 - **Includes a bundled Datastar-aware HTTP server** if you don't already have a framework — fast radix-tree router, batched + sync SSE, hot reload — see [Bundled HTTP server](#bundled-http-server).
@@ -79,7 +79,7 @@ const datastar = @import("datastar");
 
 ## The SDK Functions
 
-The whole framework-agnostic surface:
+The whole SDK framework is just :
 
 ```zig
 // Read Datastar signals from a request — GET pulls them from the
@@ -100,6 +100,10 @@ datastar.executeScriptFmt(arena, comptime fmt, args, opts) ![]const u8
 // Helper — re-exported for framework adapters
 datastar.urlDecode(allocator, input) ![]u8
 ```
+
+These functions take an input string, and return a new string in the correct format needed to post over SSE.
+
+Simple.
 
 Options:
 
