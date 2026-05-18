@@ -1,3 +1,5 @@
 bench-zig-0.16-debug
 bench-zig-0.16-fast
+bench-zig-0.16-zio-debug
+bench-zig-0.16-zio-fast
 bench-zig*

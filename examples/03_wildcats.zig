@@ -8,6 +8,10 @@ const pubsub = datastar.pubsub;
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
+// Selected at build time via `-Dio=zio`.
+const use_zio = options.io_mode == .zio;
+const zio = if (use_zio) @import("zio") else void;
+
 const PORT = 8083;
 
 pub const std_options = std.Options{ .log_level = .debug };
@@ -22,18 +26,23 @@ const MQSchema = union(enum) {
 // SSE and pub/sub to have realtime updates of bids on a Cat auction
 // with session based preferences
 pub fn main(process_init: std.process.Init) !void {
+    const rt = if (use_zio) try zio.Runtime.init(process_init.gpa, .{ .executors = .auto }) else {};
+    defer if (use_zio) rt.deinit();
+    const io: Io = if (use_zio) rt.io() else process_init.io;
+
+    if (use_zio) std.log.info("🌀 IO backend: zio (stackful coroutines)", .{}) else std.log.info("🧵 IO backend: std Io.Threaded", .{});
+
     // create the server
     var server = try datastar.HTTPServer.init(process_init, .{
         .port = PORT,
+        .io = io,
         .watch = true,
         .fd_limit = .limited(2000),
-        // .allocator = if (options.enable_fibers) std.heap.smp_allocator else null,
-        // .sse_concurrency = if (options.enable_fibers) .fibers else .threads,
     });
     defer server.deinit();
 
     // Create the global app instance and attach it to the server
-    var app = try App.init(server.io, server.io_fibers orelse server.io, server.allocator);
+    var app = try App.init(server.io, server.allocator);
     defer app.deinit();
     server.useContext(app);
 
@@ -244,16 +253,12 @@ const App = struct {
     sessions: std.StringHashMap(SessionPrefs),
     last_sort: SortType = .id,
 
-    pub fn init(io: Io, pubsub_io: Io, allocator: Allocator) !*App {
-        _ = pubsub_io; // autofix
+    pub fn init(io: Io, allocator: Allocator) !*App {
         const app = try allocator.create(App);
         app.* = .{
             .io = io,
             .allocator = allocator,
             .mutex = .init,
-            // OK, for now pubsub over fibers is completely borked due to the way
-            // timers are in transition - use Threaded IO for pubsub for now
-            // .pubsub = pubsub.PubSub(MQSchema).init(pubsub_io, allocator),
             .pubsub = pubsub.PubSub(MQSchema).init(io, allocator),
             .cats = try createCats(allocator),
             .sessions = std.StringHashMap(SessionPrefs).init(allocator),

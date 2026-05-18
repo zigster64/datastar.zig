@@ -1,16 +1,28 @@
 const std = @import("std");
 const datastar = @import("datastar");
+const options = @import("options");
 const HTTPRequest = datastar.HTTPRequest;
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
+// Selected at build time via `-Dio=zio`.
+const use_zio = options.io_mode == .zio;
+const zio = if (use_zio) @import("zio") else void;
+
 const PORT = 7331;
 
 // Run Datastar validation test suite backend in Zig
 pub fn main(init: std.process.Init) !void {
+    const rt = if (use_zio) try zio.Runtime.init(init.gpa, .{ .executors = .auto }) else {};
+    defer if (use_zio) rt.deinit();
+    const io: Io = if (use_zio) rt.io() else init.io;
+
+    if (use_zio) std.log.info("🌀 IO backend: zio (stackful coroutines)", .{}) else std.log.info("🧵 IO backend: std Io.Threaded", .{});
+
     var server = try datastar.HTTPServer.init(init, .{
         .port = PORT,
+        .io = io,
         .watch = true,
     });
     defer server.deinit();

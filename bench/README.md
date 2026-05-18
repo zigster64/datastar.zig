@@ -4,7 +4,34 @@
 
 To build - run `make`
 
-Then run the benchmark
+That produces four binaries — two IO backends × two optimization modes:
+
+| Binary                        | IO backend                       | Optimize       |
+| ----------------------------- | -------------------------------- | -------------- |
+| `bench-zig-0.16-fast`         | stdlib `Io.Threaded` (default)   | `ReleaseFast`  |
+| `bench-zig-0.16-debug`        | stdlib `Io.Threaded` (default)   | `Debug`        |
+| `bench-zig-0.16-zio-fast`     | [`lalinsky/zio`](https://github.com/lalinsky/zio) stackful coroutines | `ReleaseFast` |
+| `bench-zig-0.16-zio-debug`    | [`lalinsky/zio`](https://github.com/lalinsky/zio) stackful coroutines | `Debug` |
+
+On startup each binary prints its backend, e.g.:
+
+```
+IO backend: std Io.Threaded            # default build
+IO backend: zio (stackful coroutines)  # -Dio=zio build
+```
+
+The backend is selected at build time via the `-Dio=` flag exposed by `build.zig`:
+
+```bash
+zig build                                            # default: -Dio=std
+zig build -Dio=zio                                   # use zio
+zig build -Dio=zio -Doptimize=ReleaseFast            # release build with zio
+make zio                                             # only (re)build the zio variants
+```
+
+Both variants serve the same routes on `:8090` and are interchangeable from `wrk`'s point of view — they just differ in how the server's IO suspends underneath. The point of the zio variant is to measure the cost/benefit of swapping `Io.Threaded` for stackful coroutines on the same workload.
+
+Then run the benchmark.
 
 This benchmark is compatible with
 
@@ -15,19 +42,41 @@ https://github.com/zigster64/datastar.http.zig/tree/main/bench
 Use `wrk -t12 -c400 -d10s http://localhost:8090/sse` to get some bench numbers
 
 
+| Language | Test Case | Requests/sec | Latency (Avg) | Latency (Stddev) | Latency (Max) | Transfer/sec | Binary/RAM Size |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Zig 0.16 std (Fast)**  | Plain HTML                    | 30,799     | 10.34ms      | 9.33ms       | 259.79ms       | **4.36 GB** | 665,432   |
+| **Zig 0.16 std (Fast)**  | **Datastar SSE** 100k payload | **24,750** | **17.08ms**  | **16.49ms**  | **241.07ms**   | 4.29 GB    | 665,432   |
+| **Zig 0.16 std (Fast)**  | SSE % performance             |            |              |              |                | 80 %        |           |
+| | | | | | | | |
+| **Zig 0.16 std (Debug)** | Plain HTML                    | 31,266     | 14.39ms      | 21.59ms      | 408.34ms       | **4.43 GB** | 2,557,640 |
+| **Zig 0.16 std (Debug)** | **Datastar SSE** 100k payload | **12,443** | **31.49ms**  | **36.29ms**  | **303.23ms**   | 2.16 GB    | 2,557,640 |
+| **Zig 0.16 std (Debug)** | SSE % performance             |            |              |              |                | 40 %        |           |
+| | | | | | | | |
+| **Zig 0.16 zio (Fast)**  | Plain HTML                    | 30,641     | 8.54ms       | 3.55ms       | 46.82ms        | **4.34 GB** | 875,496   |
+| **Zig 0.16 zio (Fast)**  | **Datastar SSE** 100k payload | **25,248** | **15.18ms**  | **4.30ms**   | **58.40ms**    | 4.38 GB    | 875,496   |
+| **Zig 0.16 zio (Fast)**  | SSE % performance             |            |              |              |                | 82 %        |           |
+| | | | | | | | |
+| **Zig 0.16 zio (Debug)** | Plain HTML                    | 30,696     | 8.43ms       | 5.53ms       | 102.03ms       | **4.35 GB** | 3,208,744 |
+| **Zig 0.16 zio (Debug)** | **Datastar SSE** 100k payload | **11,811** | **33.25ms**  | **3.05ms**   | **63.09ms**    | 2.05 GB    | 3,208,744 |
+| **Zig 0.16 zio (Debug)** | SSE % performance             |            |              |              |                | 39 %        |           |
+| | | | | | | | |
+
+
+Older benchmark numbers on a different day / different setup. Useful for comparison within the same set of runs, but
+dont expect to make useful comparisons between different test runs.
+
 | Language | Test Case | Requests/sec | Latency (Avg) | Transfer/sec | Binary/RAM Size |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Zig** | Plain HTML | 39,654 | 5.50ms | **5.61 GB** | 533,672 |
-| **Zig** | **Datastar SSE** 100k payload | **23,777** | **15.99ms** | 4.12 GB | 12.7 MB  |
-| **Zig** | SSE % performance | |  | 73 % | |
+| **Zig-0.15.2** | Plain HTML | 39,654 | 5.50ms | **5.61 GB** | 533,672 |
+| **Zig-0.15.2** | **Datastar SSE** 100k payload | **23,777** | **15.99ms** | 4.12 GB | 12.7 MB  |
+| **Zig-0.15.2** | SSE % performance | |  | 73 % | |
 | | | | | | |
-| **Zig 0.16** | Plain HTML | 41,606 | 4.28ms | **5.89 GB** | 487,976 |
-| **Zig 0.16** | **Datastar SSE** 100k payload | **28,275** | **11.50ms** | 4.90 GB | 21.5 MB  |
-| **Zig 0.16** | SSE % performance | |  | 67  % | |
+| **Zig 0.16-dev** | Plain HTML | 41,606 | 4.28ms | **5.89 GB** | 487,976 |
+| **Zig 0.16-dev** | **Datastar SSE** 100k payload | **28,275** | **11.50ms** | 4.90 GB | 21.5 MB  |
+| **Zig 0.16-dev** | SSE % performance | |  | 67  % | |
 | | | | | | |
-| **Zig 0.16 Fibers** | Plain HTML | 40,243 | 137.6us | **5.70 GB** | 665,896 |
-| **Zig 0.16 Fibers** | **Datastar SSE** 100k payload | **26,996** | **237.5us** | 4.68 GB | 17.1 MB  |
-| **Zig 0.16 Fibers** | SSE % performance | |  | 67  % | |
+| **Zig 0.16-dev Fibers** | Plain HTML | 40,243 | 137.6us | **5.70 GB** | 665,896 |
+| **Zig 0.16-dev Fibers** | **Datastar SSE** 100k payload | **26,996** | **237.5us** | 4.68 GB | 17.1 MB  |
+| **Zig 0.16-dev Fibers** | SSE % performance | |  | 67  % | |
 | | | | | | |
 | **Rust** | Plain HTML | 38,201 | 5.13ms | **5.41 GB** | 1,845,936 |
 | **Rust** | **Datastar SSE** 100k payload | **20,943** | **11.43ms** | 3.63 GB | 40.2 MB |
@@ -60,5 +109,3 @@ I dont know if `wrk` conforms to that, or not either.
 Would have to do some serious instrumenting to find out where the time is spent, but its probably a combination of all of the above.
 
 The fact that its consistent across the board will different languages and SDKs suggests the numbers are pretty correct though.
-
-Will revisit this with non-trivial benchmarking after Zig 0.16.0 is out, and preferably when Io.Evented is fully ironed out.

@@ -3,7 +3,14 @@
     .version = "0.0.0",
     .fingerprint = 0xb8b2a8309ed6bd72,
     .minimum_zig_version = "0.16.0",
-    .dependencies = .{},
+    .dependencies = .{
+        // Only consumed when the bench is built with `-Dio=zio` to swap the
+        // stdlib Io.Threaded for lalinsky/zio stackful coroutines.
+        .zio = .{
+            .url = "git+https://github.com/lalinsky/zio?ref=v0.11.0#53abdf9ce5e6279e29703a39180ce1cedd8ac4ca",
+            .hash = "zio-0.11.0-xHbVVEqQGwDz0MYoQ0j7Ke0Y9E_iZVe5eLAWK4gd9U0i",
+        },
+    },
 
     .paths = .{
         "build.zig",

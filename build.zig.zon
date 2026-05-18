@@ -20,6 +20,10 @@
             .url = "git+https://github.com/lalinsky/dusty#28a97b118bf1893a17a47fb77bf6529dd997ad99",
             .hash = "dusty-0.1.0-Qdw7RqYcCgBfokVHhdXJhX5a7vuSjNx2Yeg-xgcAWSmc",
         },
+        .zio = .{
+            .url = "git+https://github.com/lalinsky/zio?ref=v0.11.0#53abdf9ce5e6279e29703a39180ce1cedd8ac4ca",
+            .hash = "zio-0.11.0-xHbVVEqQGwDz0MYoQ0j7Ke0Y9E_iZVe5eLAWK4gd9U0i",
+        },
     },
     .paths = .{
         "build.zig",

@@ -1,16 +1,21 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const IoMode = enum { std, zio };
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     const check = b.step("check", "Check if everything compiles (for ZLS)");
-    //
-    // Add CLI flag for using Kqueue fibers (experimental)
-    const enable_fibers = b.option(bool, "enable-kqueue-fibers", "Enable KQueue backed Fibers") orelse false;
+
+    // Select IO backend for the example programs. Default `std` uses the stdlib
+    // Io.Threaded supplied by std.process.Init. `-Dio=zio` swaps in lalinsky/zio
+    // so handlers run on stackful coroutines instead of OS threads.
+    const io_mode = b.option(IoMode, "io", "Examples IO backend: std (Io.Threaded, default) or zio (stackful coroutines)") orelse .std;
+
     const options = b.addOptions();
-    options.addOption(bool, "enable_fibers", enable_fibers);
+    options.addOption(IoMode, "io_mode", io_mode);
 
     const pubsub = b.dependency("pubsub", .{
         .target = target,
@@ -23,6 +28,11 @@ pub fn build(b: *std.Build) void {
     });
 
     const dusty = b.dependency("dusty", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const zio = b.dependency("zio", .{
         .target = target,
         .optimize = optimize,
     });
@@ -95,6 +105,9 @@ pub fn build(b: *std.Build) void {
         });
         exe.root_module.addImport("datastar", datastar_module);
         exe.root_module.addOptions("options", options);
+        if (io_mode == .zio) {
+            exe.root_module.addImport("zio", zio.module("zio"));
+        }
         b.installArtifact(exe);
 
         const run_cmd = b.addRunArtifact(exe);
@@ -118,6 +131,9 @@ pub fn build(b: *std.Build) void {
         });
         exe_check.root_module.addImport("datastar", datastar_module);
         exe_check.root_module.addOptions("options", options);
+        if (io_mode == .zio) {
+            exe_check.root_module.addImport("zio", zio.module("zio"));
+        }
         check.dependOn(&exe_check.step); // <--- Add to check
     }
 

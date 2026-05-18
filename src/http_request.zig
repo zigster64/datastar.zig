@@ -23,7 +23,6 @@ const HTTPRequest = @This();
 ///   - status code for the response
 req: *std.http.Server.Request,
 io: Io,
-io_fibers: ?Io = null,
 ctx: ?*anyopaque = null,
 arena: std.mem.Allocator,
 params: Params,
@@ -31,7 +30,6 @@ path: []const u8 = "",
 method: std.http.Method = .GET,
 extra_headers: ?[]const std.http.Header = null,
 detach: bool = false, // detached is set if there is any SSE acting on this request - which stops it looping looking for more requests on the same connection
-disowned: bool = false, // if its detached AND we are using fibers, then the connection is disowned
 replied: bool = false,
 req_payload: ?[]const u8 = null,
 status: std.http.Status = .ok,

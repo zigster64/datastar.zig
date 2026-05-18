@@ -1,16 +1,21 @@
-# datastar.zig
+# datastar.zig - A Web Framework for Zig 0.16
 
-A Zig 0.16 SDK for [Datastar](https://data-star.dev) — patch DOM elements, patch signals, and execute scripts on the browser from your backend over SSE.
+**A Datastar-aware HTTP server for Zig 0.16.**
+
+Build realtime collaborative web apps where the backend pushes DOM patches, signal updates, and browser scripts to connected clients over a fast SSE pipe. Single binary, no JS bundler, no frontend framework.
 
 ![Cyberpunk Datastar Zig SDK - Sydney Metro Rail - Leica XV](assets/datastar.zig.jpg)
 
-- **Tiny framework surface.** Four functions — `readSignals`, `patchElements`, `patchSignals`, `executeScript` — that take an arena allocator and return ready-to-ship SSE strings. Drop them into the stdlib HTTP server, [`http.zig`](https://github.com/karlseguin/http.zig), [`dusty`](https://github.com/lalinsky/dusty), `zap`, `jetzig`, `tokamak`, or whatever else.
-- **Full Datastar wire protocol.** Raw + `Fmt` variants, HTML / SVG / MathML namespaces, `view_transition`, `only_if_missing`, custom script attributes, event IDs, retry duration — everything from the [Datastar SDK ADR](https://github.com/starfederation/datastar/blob/develop/sdk/ADR.md).
-- **Passes the official Datastar validation suite.**
-- **Includes a bundled Datastar-aware HTTP server** if you don't already have a framework — fast radix-tree router, batched + sync SSE, hot reload — see [Bundled HTTP server](#bundled-http-server).
-- **Bundled in-process pub/sub** via [`pubsub.zig`](https://github.com/zigster64/pubsub.zig) — enough to do CQRS in a single binary, with a clean off-ramp to NATS / Redis / Postgres listen-notify when you outgrow it. See [Pub/Sub and CQRS](#pubsub-and-cqrs).
+- **Complete HTTP server in a single binary.** Radix-tree router, per-request arena, batched + sync SSE, hot reload during development, `*HTTPRequest` API that knows about Datastar. `zig build && ./your-app` and you're serving reactive HTML.
+- **BYO IO backends, build-time selectable.** Default `std.Io.Threaded` (OS threads) for portability. `-Dio=zio` for stackful coroutines on N-executor scheduler. Same handler code, different concurrency model — see [Selecting the IO backend](#selecting-the-io-backend) and the [bench numbers](bench/README.md).
+- **Bundled in-process pub/sub.** [`pubsub.zig`](https://github.com/zigster64/pubsub.zig) is wired in by default — enough to do CQRS in a single binary, with a clean off-ramp to NATS / Redis / Postgres LISTEN-NOTIFY when you outgrow it. See [Pub/Sub and CQRS](#pubsub-and-cqrs).
+- **Full Datastar wire protocol.** Patches, signals, scripts. HTML / SVG / MathML namespaces, `view_transition`, `only_if_missing`, custom script attributes, event IDs, retry duration — everything from the [Datastar SDK ADR](https://github.com/starfederation/datastar/blob/develop/sdk/ADR.md). Passes the official validation suite.
+- **SDK functions exposed too.** If you've already chosen a framework — [`http.zig`](https://github.com/karlseguin/http.zig), [`dusty`](https://github.com/lalinsky/dusty), `zap`, `jetzig`, `tokamak`, or stdlib — you can import just the four transformer functions and ignore the server. See [Using just the SDK](#using-just-the-sdk), or use the dedicated [`datastar-sdk.zig`](https://github.com/zigster64/datastar-sdk.zig) repo if you only want the SDK without the bundled server pulled in.
 
-For stable Zig 0.15.2, see [`datastar.http.zig`](https://github.com/zigster64/datastar.http.zig).
+Related repos:
+
+- [`datastar-sdk.zig`](https://github.com/zigster64/datastar-sdk.zig) — the SDK transformer functions on their own. Use this if you have a framework already and just want the Datastar wire format.
+- [`datastar.http.zig`](https://github.com/zigster64/datastar.http.zig) — older stable Zig 0.15.2 version of this server.
 
 ## Zig Version
 
@@ -19,42 +24,85 @@ Requires Zig **0.16.0** or newer. Tracks the `0.16.0` release.
 ## Table of Contents
 
 - [Quick Example](#quick-example)
+- [Run the demos](#run-the-demos)
 - [Installation](#installation)
-- [The SDK Functions](#the-sdk-functions)
-- [Plug it into your framework](#plug-it-into-your-framework)
-- [Build, Run, Test](#build-run-test)
-- [Bundled HTTP server](#bundled-http-server)
+- [The HTTP Server](#the-http-server)
+- [Selecting the IO backend](#selecting-the-io-backend)
 - [Pub/Sub and CQRS](#pubsub-and-cqrs)
-- [Roadmap](#roadmap)
+- [Performance](#performance)
+- [Build, Run, Test](#build-run-test)
+- [Using just the SDK](#using-just-the-sdk)
 - [More on Datastar](#more-on-datastar)
 
 ## Quick Example
 
-The SDK is just four functions. Each transformer returns a complete `event: ...\ndata: ...\n\n` SSE block — concatenate as many as you want and write them as the response body with `Content-Type: text/event-stream`:
-
 ```zig
+const std = @import("std");
 const datastar = @import("datastar");
+const HTTPServer = datastar.HTTPServer;
+const HTTPRequest = datastar.HTTPRequest;
 
-// Inside an SSE handler, with `req.arena` and a `res` from your framework:
+pub fn main(init: std.process.Init) !void {
+    var server = try HTTPServer.init(init, .{ .port = 8080 });
+    defer server.deinit();
 
-// 1. Patch DOM elements
-const a = try datastar.patchElements(req.arena, "<div id='hello'>Hi</div>", .{});
+    server.router.get("/", index);
+    server.router.get("/sse", sseHandler);
 
-// 2. Patch signals (any JSON-serializable value)
-const b = try datastar.patchSignals(req.arena, .{ .foo = 42, .bar = "Datastar Rocks" }, .{});
+    try server.run();
+}
 
-// 3. Run a script on the client
-const c = try datastar.executeScriptFmt(req.arena, "alert('hello {s}')", .{name}, .{});
+fn index(http: *HTTPRequest) !void {
+    return http.html(
+        \\<!DOCTYPE html>
+        \\<html>
+        \\<head><script src="https://cdn.jsdelivr.net/npm/@starfederation/datastar" defer></script></head>
+        \\<body data-on-load="@get('/sse')">
+        \\  <div id="hello">(loading…)</div>
+        \\</body>
+        \\</html>
+    );
+}
 
-res.header("Content-Type", "text/event-stream");
-res.body = try std.mem.concat(req.arena, u8, &.{ a, b, c });
-
-// And to read Datastar signals on the way in:
-const Signals = struct { name: []const u8, count: u32 };
-const signals = try datastar.readSignals(Signals, req.arena, req);
+fn sseHandler(http: *HTTPRequest) !void {
+    var sse = try http.NewSSE();
+    defer sse.close();
+    try sse.patchElements("<div id='hello'>Hello from the server!</div>", .{});
+    try sse.patchSignals(.{ .count = 42 }, .{}, .{});
+}
 ```
 
-Full working examples in `examples/01_basic_httpz.zig` (port to [`http.zig`](https://github.com/karlseguin/http.zig)) and `examples/01_basic_dusty.zig` (port to [`dusty`](https://github.com/lalinsky/dusty)).
+A complete, working reactive Datastar app: `zig build && ./your-app`, visit `http://localhost:8080`.
+
+## Run the demos
+
+The fastest way to get a feel for what this library does is to run the bundled examples.
+
+```bash
+# Zig 0.16 or newer must be installed
+git clone https://github.com/zigster64/datastar.zig
+cd datastar.zig
+zig build
+./zig-out/bin/example_1
+```
+
+Then open `http://localhost:8081` in your browser. Crack open DevTools and watch the SSE stream in the Network tab — every interaction in the UI sends/receives small Datastar event blocks.
+
+![Kitchen-sink demo](./docs/images/example_1a.png)
+
+Each example demonstrates a different pattern:
+
+| Binary             | Port  | What it shows                                                                 |
+| ------------------ | ----- | ----------------------------------------------------------------------------- |
+| `example_1`        | 8081  | Kitchen-sink walkthrough of every SDK function, with a live "show code" panel |
+| `example_2`        | 8082  | Realtime cat auction — open multiple browser windows and watch bids sync     |
+| `example_3`        | 8083  | WildCat auction with per-session preferences (cookies + pub/sub fan-out)      |
+| `example_5`        | 8085  | Multi-player farming simulator with shared world state                        |
+| `validation-test`  | 7331  | Backend for the official Datastar SDK conformance suite                       |
+
+All examples support `-Dio=zio` for the coroutine backend — e.g. `zig build example_2 -Dio=zio`.
+
+`TUTORIAL.md` has the longer walkthrough, including SVG/MathML morphing, advanced SSE patterns, and pub/sub recipes.
 
 ## Installation
 
@@ -78,9 +126,236 @@ Import:
 const datastar = @import("datastar");
 ```
 
-## The SDK Functions
+## The HTTP Server
 
-The whole SDK framework is just :
+Handlers receive a `*HTTPRequest` with everything you typically need on a request:
+
+```zig
+fn handler(http: *HTTPRequest) !void {
+    http.req                              // *std.http.Server.Request — full underlying request
+    http.arena                            // per-request arena allocator
+    http.io                               // std.Io — works with std.Io.Threaded or zio
+    http.ctx                              // ?*anyopaque global context (set via server.useContext)
+    http.params.get(name)                 // route path params
+    http.params.getInt(T, name)
+    http.method, http.path                // request line bits
+
+    // Response helpers
+    http.html(body) / htmlFmt(fmt, args)  // text/html
+    http.json(value)                      // JSON-encoded
+    http.css(body) / cssFmt(fmt, args)    // text/css
+    http.js(body) / jsFmt(fmt, args)      // application/javascript
+    http.sendFile(path, content_type)     // serve a file, mime-typed by extension
+
+    // Read Datastar signals from the request
+    http.readSignals(T)                   // T = your signals struct
+
+    // Cookies, headers, query
+    http.getCookie(name) / setCookie(...)
+    http.query                            // raw query string
+    http.extra_headers = &.{ ... };       // headers added on the response
+}
+```
+
+For Datastar SSE responses, the `SSE` object wraps chunked encoding and the wire format:
+
+```zig
+fn sseHandler(http: *HTTPRequest) !void {
+    var sse = try http.NewSSE();              // batched (single-shot response)
+    defer sse.close();
+
+    try sse.patchElements("<div id='x'>...</div>", .{});
+    try sse.patchSignals(.{ .count = 42 }, .{}, .{});
+    try sse.executeScriptFmt("alert('hi {s}')", .{name}, .{});
+}
+```
+
+For long-lived persistent streams (typical CQRS query handler — see [Pub/Sub and CQRS](#pubsub-and-cqrs)):
+
+```zig
+fn liveHandler(http: *HTTPRequest) !void {
+    var sse = try http.NewSSESync();          // each call flushed immediately
+    defer sse.close();
+
+    while (try mq.nextTimeout(.fromSeconds(30))) |event| switch (event) {
+        .msg     => try sse.patchElements(render(), .{}),
+        .timeout => try sse.keepalive(),
+    }
+}
+```
+
+Custom SSE buffer size via `NewSSEOpt`:
+
+```zig
+var sse = try http.NewSSEOpt(.{ .buffer_size = 32 * 1024, .sync = false });
+```
+
+Routing is a radix-tree, no allocation per match:
+
+```zig
+const r = server.router;
+r.get("/", index);
+r.get("/users/:id/:action", userAction);
+r.post("/bid/:id", postBid);
+r.patch("/items/:id", patchItem);
+r.delete("/items/:id", deleteItem);
+```
+
+Server config (`Config` in `src/server.zig`):
+
+```zig
+.{
+    .port               = 8080,
+    .address            = null,        // null = listen on all addresses
+    .io                 = null,        // override std.Io (see Selecting the IO backend)
+    .allocator          = null,        // override gpa from std.process.Init
+    .log                = .{},         // Log config (format, theme, levels)
+    .watch              = false,       // hot reload — reboot on executable change (dev mode)
+    .fd_limit           = null,        // .max, .limited(n), or null
+    .read_buffer_size   = 4 * 1024,    // per-connection
+    .write_buffer_size  = 4 * 1024,    // per-connection
+}
+```
+
+**Hot reload during development.** Set `.watch = true`. The server watches its own executable on disk and, when you rebuild, exec's the new binary (via `std.process.replace`) while open browser tabs reconnect automatically. See `examples/01_basic.zig` for the complete pattern, including the client-side stale-tab detection.
+
+The full walkthrough — batched vs sync writes, hot-reload setup, pub/sub patterns, header tricks, validation harness, benchmarking notes — lives in `TUTORIAL.md`.
+
+## Selecting the IO backend
+
+The server is built on `std.Io` and is backend-interchangeable at build time:
+
+```bash
+zig build example_1              # default: -Dio=std  (stdlib Io.Threaded)
+zig build example_1 -Dio=zio     # use lalinsky/zio (stackful coroutines)
+```
+
+| Flag        | Backend                                                       | Notes                                                                                              |
+| ----------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `-Dio=std`  | `std.Io.Threaded`                                             | Default. Handlers run on a growing pool of OS threads. No extra deps in the binary.                |
+| `-Dio=zio`  | [`zio.Runtime`](https://github.com/lalinsky/zio)              | Stackful coroutines on an N-executor scheduler. `.auto` resolves to one executor per CPU core.     |
+
+On startup each example logs which backend is active:
+
+```
+info: 🧵 IO backend: std Io.Threaded
+info: 🌀 IO backend: zio (stackful coroutines)
+```
+
+Wiring zio into your own `main` is a few lines — kept behind a comptime branch so `-Dio=std` builds don't depend on `zio` at all:
+
+```zig
+const use_zio = options.io_mode == .zio;
+const zio = if (use_zio) @import("zio") else void;
+
+pub fn main(init: std.process.Init) !void {
+    const rt = if (use_zio) try zio.Runtime.init(init.gpa, .{ .executors = .auto }) else {};
+    defer if (use_zio) rt.deinit();
+    const io: std.Io = if (use_zio) rt.io() else init.io;
+
+    var server = try datastar.HTTPServer.init(init, .{ .port = 8080, .io = io });
+    defer server.deinit();
+    // ...
+    try server.run();
+}
+```
+
+Every example in `examples/*.zig` and `tests/validation.zig` is wired up this way — they all run under either backend.
+
+## Pub/Sub and CQRS
+
+Reactive multi-player Datastar apps almost always end up doing CQRS in miniature: a `POST /bid` command mutates state, and every connected SSE stream that cares about that state needs to be told to re-render. That requires an in-process message bus to fan out from command handlers to all the long-lived SSE subscribers.
+
+The SDK bundles [`pubsub.zig`](https://github.com/zigster64/pubsub.zig) for this — a small in-process broker built specifically for these Datastar SSE runners. It's wired in by default, so there's nothing extra to add to `build.zig`:
+
+```zig
+const datastar = @import("datastar");
+const pubsub = datastar.pubsub;   // re-exported for convenience
+```
+
+A typical CQRS loop — query side subscribes and streams updates, command side publishes after mutating state:
+
+```zig
+// Query side: long-lived SSE that re-renders whenever `cats` is published
+fn catsList(app: *App, http: *HTTPRequest) !void {
+    var sse = try http.NewSSESync();
+    defer sse.close();
+    try pushCatList(app, &sse);            // initial render
+
+    var mq = try app.pubsub.connect();
+    defer mq.deinit();
+    try mq.subscribe(.cats);
+
+    while (try mq.nextTimeout(.fromSeconds(30))) |event| switch (event) {
+        .msg     => try pushCatList(app, &sse),
+        .timeout => try sse.keepalive(),
+    }
+}
+
+// Command side: mutate, then publish
+fn postBid(app: *App, http: *HTTPRequest) !void {
+    // ... validate + apply the bid ...
+    try app.pubsub.publish(.{ .cats = {} }, .all);
+}
+```
+
+You don't have to use the bundled broker. It's bundled because it's the shortest path from "single binary" to "working multi-player demo" — every example in this repo that needs fan-out uses it (`example_2`, `example_3`, `example_5`). When you outgrow single-process — multiple app instances, durability, cross-language consumers — swap it for **NATS**, **Redis pub/sub**, **Postgres LISTEN/NOTIFY**, or any other broker. The handler shape stays the same: subscribe, loop, render on each message; publish from the command handler. Only the `connect` / `subscribe` / `publish` calls change.
+
+See `examples/02_cats.zig` for a complete worked example, and the *Publish and Subscribe* section of `TUTORIAL.md` for the longer walkthrough.
+
+## Performance
+
+100 KB Datastar SSE event-stream benchmark, `wrk -t12 -c400 -d10s`, ReleaseFast, Apple Silicon:
+
+| Backend              | Throughput     | Avg latency  | Latency stddev  | Max latency    |
+| -------------------- | -------------- | ------------ | --------------- | -------------- |
+| `Io.Threaded` (Fast) | 24,750 req/s   | 17.08 ms     | 16.49 ms        | 241 ms         |
+| **zio (.auto, Fast)** | **25,248 req/s** | **15.18 ms** | **4.30 ms**     | **58 ms**      |
+
+zio matches `Io.Threaded` on throughput and gives **~4× tighter tail latency** under load — same workload, the only difference is how the server's IO suspends underneath. For a reactive UI, what matters isn't the avg — it's that no one in a hundred users gets a 250 ms hiccup.
+
+See [`bench/README.md`](bench/README.md) for the full comparison: Debug builds, plain HTML baseline, and historical / cross-language reference numbers.
+
+## Build, Run, Test
+
+```bash
+zig build                       # build everything into zig-out/bin
+zig build test                  # run unit tests
+zig build check                 # type-check everything (for ZLS)
+zig build example_1             # run example_1 directly via the build system
+zig build example_1 -Dio=zio    # same, with zio coroutines
+zig build http.zig              # build the http.zig SDK adapter (opt-in)
+zig build dusty                 # build the dusty SDK adapter (opt-in)
+```
+
+See [Run the demos](#run-the-demos) for the list of example binaries and what each one shows.
+
+## Using just the SDK
+
+If you've already chosen an HTTP framework — `http.zig`, `dusty`, `zap`, `jetzig`, `tokamak`, stdlib HTTP, whatever — you can use just the four SDK transformer functions and skip the bundled server entirely.
+
+> **For SDK-only use, prefer [`datastar-sdk.zig`](https://github.com/zigster64/datastar-sdk.zig)** — same transformer functions packaged as a standalone module, without dragging in the bundled HTTP server or the pubsub dependency. This section is a quick reference; the dedicated repo is what you want to depend on for production SDK-only use.
+
+Each transformer returns a complete `event: ...\ndata: ...\n\n` SSE block — concatenate as many as you want and write them as the response body with `Content-Type: text/event-stream`:
+
+```zig
+const datastar = @import("datastar");
+
+// Inside any framework's SSE handler, with an arena and a `res` from your framework:
+
+const a = try datastar.patchElements(arena, "<div id='hello'>Hi</div>", .{});
+const b = try datastar.patchSignals(arena, .{ .foo = 42, .bar = "Datastar Rocks" }, .{});
+const c = try datastar.executeScriptFmt(arena, "alert('hello {s}')", .{name}, .{});
+
+res.header("Content-Type", "text/event-stream");
+res.body = try std.mem.concat(arena, u8, &.{ a, b, c });
+
+// And to read Datastar signals on the way in:
+const Signals = struct { name: []const u8, count: u32 };
+const signals = try datastar.readSignals(Signals, arena, req);
+```
+
+The full SDK surface:
 
 ```zig
 // Read Datastar signals from a request — GET pulls them from the
@@ -102,10 +377,6 @@ datastar.executeScriptFmt(arena, comptime fmt, args, opts) ![]const u8
 datastar.urlDecode(allocator, input) ![]u8
 ```
 
-These functions take an input string, and return a new string in the correct format needed to post over SSE.
-
-Simple.
-
 Options:
 
 ```zig
@@ -119,19 +390,16 @@ NameSpace = .html | .svg | .mathml
 
 `.{}` is almost always the right value for the options argument. See `src/datastar.zig` for the full option fields and defaults.
 
-## Plug it into your framework
+### Reference adapters
 
-Wiring is two lines per response: set `Content-Type: text/event-stream`, then write the bytes returned by the transformer:
+The kitchen-sink `example_1` is also wired up to two third-party HTTP frameworks using only the generic transformer functions. They double as the canonical reference for plugging the SDK into any framework:
 
-```zig
-fn myHandler(req: *anyframework.Request, res: *anyframework.Response) !void {
-    const body = try datastar.patchElements(req.arena, "<div id='x'>hi</div>", .{});
-    try res.header("Content-Type", "text/event-stream");
-    res.body = body;
-}
-```
+| Target               | Output binary       | Framework                                                       | Source                          |
+| -------------------- | ------------------- | --------------------------------------------------------------- | ------------------------------- |
+| `zig build http.zig` | `example_1_httpz`   | [`karlseguin/http.zig`](https://github.com/karlseguin/http.zig) | `examples/01_basic_httpz.zig`   |
+| `zig build dusty`    | `example_1_dusty`   | [`lalinsky/dusty`](https://github.com/lalinsky/dusty)           | `examples/01_basic_dusty.zig`   |
 
-For long-lived streaming (animations, multi-frame morphs, keepalive pings), grab the raw stream from your framework and write blocks as you produce them. The `examples/01_basic_httpz.zig` and `examples/01_basic_dusty.zig` files show the pattern end-to-end for two different frameworks.
+Both run on the same `:8081` port and serve the same UI as `example_1` — the navbar shows which web server is driving the page.
 
 ### `readSignals` in frameworks that hide the underlying request
 
@@ -168,163 +436,6 @@ fn readSignalsAnyFramework(
     );
 }
 ```
-
-## Build, Run, Test
-
-```bash
-zig build                       # build everything into zig-out/bin
-zig build test                  # run unit tests
-zig build example_1             # run the kitchen-sink demo on :8081
-zig build http.zig              # build the http.zig port of example_1 (opt-in)
-zig build dusty                 # build the dusty port of example_1 (opt-in)
-./zig-out/bin/validation-test   # serve the Datastar SDK conformance suite on :7331
-```
-
-Example binaries produced by `zig build`:
-
-| Binary               | Description                                                       |
-| -------------------- | ----------------------------------------------------------------- |
-| `example_1`          | Kitchen-sink demo of every SDK function with live "show code"     |
-| `example_2`          | Realtime cat auction with multi-window bid updates                |
-| `example_3`          | WildCat auction with per-session preferences                      |
-| `example_5`          | Multi-player farming sim                                          |
-| `validation-test`    | Server for the official Datastar SDK validation suite             |
-
-### Reference ports to other HTTP frameworks
-
-The same kitchen-sink demo is also wired up to two third-party HTTP frameworks, using only the generic transformer functions. They double as the canonical reference for plugging the Datastar SDK into any framework.
-
-| Target               | Output binary       | Framework                                                       | Source                          |
-| -------------------- | ------------------- | --------------------------------------------------------------- | ------------------------------- |
-| `zig build http.zig` | `example_1_httpz`   | [`karlseguin/http.zig`](https://github.com/karlseguin/http.zig) | `examples/01_basic_httpz.zig`   |
-| `zig build dusty`    | `example_1_dusty`   | [`lalinsky/dusty`](https://github.com/lalinsky/dusty)           | `examples/01_basic_dusty.zig`   |
-
-Both run on the same `:8081` port and serve the same UI as `example_1` — the navbar shows which web server is driving the page.
-
-## Bundled HTTP server
-
-If you don't already have an HTTP framework picked out, this repo also ships **a complete Datastar-aware HTTP server** for Zig 0.16, built on `std.http`. It has tighter integration than the generic SDK functions — request handlers receive a `*HTTPRequest` that knows about Datastar SSE, batched vs sync streaming, hot reload, and a fast radix-tree router.
-
-A minimal handler looks like this:
-
-```zig
-const datastar = @import("datastar");
-const HTTPServer = datastar.HTTPServer;
-const HTTPRequest = datastar.HTTPRequest;
-
-pub fn main(init: std.process.Init) !void {
-    var server = try HTTPServer.init(init, .{ .port = 8080 });
-    defer server.deinit();
-
-    const r = server.router;
-    r.get("/", index);
-    r.get("/sse/:id", sseEndpoint);
-
-    try server.run();
-}
-
-fn sseEndpoint(http: *HTTPRequest) !void {
-    var sse = try http.NewSSE();
-    defer sse.close();
-
-    try sse.patchElements("<div id='hello'>Hello World</div>", .{});
-    try sse.patchSignals(.{ .foo = 42 }, .{}, .{});
-    try sse.executeScriptFmt("alert('hello {s}')", .{"world"}, .{});
-}
-```
-
-Key surface:
-
-```zig
-HTTPServer.init(process_init, config) !*HTTPServer
-server.run() / server.deinit()
-server.useCtx(ptr)                    // attach a global context for handlers
-server.rebooter(process_init)         // restart on executable change (dev mode)
-
-// Routing
-const r = server.router;
-r.get / r.post / r.patch / r.delete(path, handler)
-// Path params: r.get("/users/:id/:action", handler)
-
-// Inside a handler:
-http.req                              // underlying *std.http.Server.Request
-http.arena                            // per-request arena
-http.params.get(name) / http.params.getInt(T, name)
-http.html / htmlFmt / json / css / cssFmt / js / jsFmt / sendFile
-http.readSignals(T)
-http.setCookie / getCookie / query
-
-// SSE
-http.NewSSE()      // batched (default)
-http.NewSSESync()  // immediate per-call writes for long-lived streams
-http.NewSSEOpt(SSEOptions)
-
-sse.patchElements / patchElementsFmt / patchElementsWriter
-sse.patchSignals / patchSignalsWriter
-sse.executeScript / executeScriptFmt / executeScriptWriter
-sse.keepalive / flush / close
-```
-
-Server config (see `Config` in `src/server.zig`):
-
-```zig
-.{
-    .port               = 8080,
-    .address            = null,        // null = listen on all addresses
-    .threads            = num_cpus,    // short-lived request pool
-    .sse_threads        = N,           // long-lived SSE pool
-    .public_sse_threads = N,           // separate pool for untrusted SSE clients
-    .fd_limit           = .max,        // or .limited(n), or null
-    .watch              = false,       // reboot on executable change
-}
-```
-
-The full prose walkthrough — batched vs sync writes, hot reload setup, pub/sub patterns, header tricks, validation harness, benchmarking notes — lives in `TUTORIAL.md`.
-
-## Pub/Sub and CQRS
-
-Reactive, multi-player Datastar apps almost always end up doing CQRS in miniature: a `POST /bid` command mutates state, and every connected SSE stream that cares about that state needs to be told to re-render. That requires an in-process message bus to fan out from the command handler to all the long-lived SSE subscribers.
-
-To make this possible out of the box, the SDK bundles [`pubsub.zig`](https://github.com/zigster64/pubsub.zig) — a small in-process broker built specifically for these Datastar SSE runners. It is wired up automatically as part of the `datastar` module and the bundled HTTP server, so there is nothing extra to add to `build.zig`:
-
-```zig
-const datastar = @import("datastar");
-const pubsub = datastar.pubsub;   // re-exported for convenience
-```
-
-A typical CQRS loop looks like this — a query handler subscribes and streams updates, and a command handler publishes after mutating state:
-
-```zig
-// Query side: long-lived SSE that re-renders whenever `cats` is published
-fn catsList(app: *App, http: *HTTPRequest) !void {
-    var sse = try http.NewSSESync();
-    defer sse.close();
-    try pushCatList(app, &sse);            // initial render
-
-    var mq = try app.pubsub.connect();
-    defer mq.deinit();
-    try mq.subscribe(.cats);
-
-    while (try mq.nextTimeout(.fromSeconds(30))) |event| switch (event) {
-        .msg     => try pushCatList(app, &sse),
-        .timeout => try sse.keepalive(),
-    }
-}
-
-// Command side: mutate, then publish
-fn postBid(app: *App, http: *HTTPRequest) !void {
-    // ... validate + apply the bid ...
-    try app.pubsub.publish(.{ .cats = {} }, .all);
-}
-```
-
-You don't have to use the bundled broker. It is bundled because it's the shortest path from "single binary" to "working multi-player demo", and because every example app in this repo that needs fan-out uses it (`example_2`, `example_3`, `example_5`). When you outgrow single-process — multiple app instances, durability, cross-language consumers — swap it for **NATS**, **Redis pub/sub**, **Postgres LISTEN/NOTIFY**, or any other broker. The handler shape stays the same: subscribe, loop, render on each message; publish from the command handler. Only the `connect` / `subscribe` / `publish` calls change.
-
-See `examples/02_cats.zig` for a complete worked example, and the *Publish and Subscribe* section of `TUTORIAL.md` for the longer walkthrough.
-
-## Roadmap
-
-- **`Io.Evented` migration.** Examples currently use `Io.Threaded`. Work on Evented / io_uring / kqueue / GrandCentralDispatch — ongoing in the 0.17 branch in this repo.
 
 ## More on Datastar
 

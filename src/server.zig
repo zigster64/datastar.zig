@@ -29,15 +29,10 @@ log: Log = undefined,
 middleware: ?*Middleware = null,
 watch: bool = false,
 fd_limit: ?FDLimit = null,
+read_buffer_size: usize = 4 * 1024,
+write_buffer_size: usize = 4 * 1024,
 
 group: Io.Group = .init,
-pool_fibers: ?*Io.Evented = null,
-io_fibers: ?Io = null,
-
-pub const Concurrency = enum {
-    threads,
-    fibers,
-};
 
 // Config params for creating a server
 pub const Config = struct {
@@ -48,10 +43,11 @@ pub const Config = struct {
     allocator: ?Allocator = null,
     watch: bool = false,
     fd_limit: ?FDLimit = null,
-    threads: u64 = 32,
-    // Debug mode consumes a lot more stack, due to carrying extra debug info
-    stack_size: usize = if (builtin.mode == .Debug) 16 * 1024 * 1024 else 2 * 1024 * 1024,
-    sse_concurrency: Concurrency = .threads,
+    // Per-connection read/write buffers. Defaults of 4 KB keep the server lean
+    // for low/mid traffic. Bump these when responses are reliably much larger
+    // than 4 KB — fewer underlying writev/readv syscalls per request.
+    read_buffer_size: usize = 4 * 1024,
+    write_buffer_size: usize = 4 * 1024,
 };
 
 // FD limit configuration
@@ -78,18 +74,6 @@ pub fn init(process_init: std.process.Init, config: Config) !*Server {
     var self: *Server = try allocator.create(Server);
     errdefer allocator.destroy(self);
 
-    self.pool_fibers = null;
-    self.io_fibers = null;
-    // if (config.sse_concurrency == .fibers) {
-    //     self.pool_fibers = try allocator.create(std.Io.Kqueue);
-    //     const pool_fibers = self.pool_fibers.?;
-    //     try std.Io.Kqueue.init(pool_fibers, allocator, .{});
-    //     self.io_fibers = pool_fibers.io();
-    //     std.log.debug("🧵 HTTP Server Using Kqueue Fibers for handlers (Experimental)", .{});
-    // } else {
-    std.log.debug("🤹‍♂️ HTTP Server Using OS Threads for handlers", .{});
-    // }
-
     self.* = .{
         .process_init = process_init,
         .server = try address.listen(io, .{ .reuse_address = true }),
@@ -100,6 +84,8 @@ pub fn init(process_init: std.process.Init, config: Config) !*Server {
         .arena = std.heap.ArenaAllocator.init(allocator),
         .watch = config.watch,
         .fd_limit = config.fd_limit,
+        .read_buffer_size = config.read_buffer_size,
+        .write_buffer_size = config.write_buffer_size,
     };
     errdefer self.arena.deinit();
     self.router = try Router.init(self.arena.allocator());
@@ -131,13 +117,7 @@ pub fn run(self: *Server) !void {
 
     while (true) {
         const conn = try self.server.accept(self.io);
-        if (self.io_fibers) |io_fibers| {
-            _ = io_fibers.concurrent(handleConnection, .{ self, conn }) catch |err| {
-                std.log.err("spawn handler in fiber error {}\n", .{err});
-                conn.close(self.io);
-                continue; // ah well failed - try another one, dont exit the loop yet
-            };
-        } else self.group.concurrent(self.io, handleConnection, .{ self, conn }) catch |err| {
+        self.group.concurrent(self.io, handleConnection, .{ self, conn }) catch |err| {
             std.log.err("spawn handler error {}\n", .{err});
             conn.close(self.io);
             continue; // ah well failed - try another one, dont exit the loop yet
@@ -163,35 +143,39 @@ fn nonBlocking(conn: Io.net.Stream) !void {
 }
 
 fn handleConnection(self: *Server, conn: Io.net.Stream) Io.Cancelable!void {
-    // dont do this until Kqueue is complete please
-    // nonBlocking(conn) catch return error.Canceled;
+    defer conn.close(self.io);
 
-    var close_conn = true;
-    defer if (close_conn) conn.close(self.io);
-
-    var read_buffer: [4096]u8 = undefined;
-    var write_buffer: [4096]u8 = undefined;
-
-    var reader = conn.reader(self.io, &read_buffer);
-    var writer = conn.writer(self.io, &write_buffer);
-
+    // Outer arena lives for the whole connection. Holds the connection-scoped
+    // read/write buffers (sized by config) so we can have runtime-configurable
+    // sizes without a stack array of runtime length.
     var arena: std.heap.ArenaAllocator = .init(self.allocator);
     defer arena.deinit();
 
+    const read_buffer = arena.allocator().alloc(u8, self.read_buffer_size) catch return error.Canceled;
+    const write_buffer = arena.allocator().alloc(u8, self.write_buffer_size) catch return error.Canceled;
+
+    var reader = conn.reader(self.io, read_buffer);
+    var writer = conn.writer(self.io, write_buffer);
+
+    // Inner arena is per-request. Backed by the outer arena so its blocks come
+    // from the same allocator chain; reset(.retain_capacity) between requests
+    // keeps the underlying memory mapped and only resets the bump pointer. The
+    // outer arena's buffers are untouched by handler_arena resets.
+    var handler_arena: std.heap.ArenaAllocator = .init(arena.allocator());
+
     while (true) {
-        defer _ = arena.reset(.retain_capacity);
+        defer _ = handler_arena.reset(.retain_capacity);
 
         var server = std.http.Server.init(&reader.interface, &writer.interface);
         var request = server.receiveHead() catch break;
 
         var http = HTTPRequest{
             .io = self.io,
-            .io_fibers = self.io_fibers,
             .ctx = self.ctx,
             .req = &request,
-            .arena = arena.allocator(),
+            .arena = handler_arena.allocator(),
             .params = .{},
-            .path = arena.allocator().dupe(u8, request.head.target) catch return error.Canceled,
+            .path = handler_arena.allocator().dupe(u8, request.head.target) catch return error.Canceled,
             .method = request.head.method,
             .timer = .now(self.io, std.Io.Clock.real),
             .log = self.log,
@@ -202,13 +186,7 @@ fn handleConnection(self: *Server, conn: Io.net.Stream) Io.Cancelable!void {
         // Anything asking for a Sync SSE connection will detach the request from this inner loop
         // this is because any SSE created over this connection will be treated as the last action
         // in this connection. The trigger for the browser is text/event-stream + chunked encoding
-        if (http.detach) {
-            // if we are running with fibers, then the long SSE handler is a fiber that we have
-            // handed over to, so we dont want to close this connection, thats the job of the
-            // handler instead
-            if (http.disowned) close_conn = false;
-            break;
-        }
+        if (http.detach) break;
     }
 }
 
