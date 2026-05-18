@@ -1,21 +1,38 @@
 const std = @import("std");
 const datastar = @import("datastar");
+const options = @import("options");
 const HTTPRequest = datastar.HTTPRequest;
 const Io = std.Io;
 
+// Selected at build time via `-Dio=zio`. The default `std` mode keeps the
+// stdlib Io.Threaded that std.process.Init hands us; the zio mode spins up a
+// zio.Runtime and feeds its std.Io into the server so handler IO suspends on
+// stackful coroutines instead of OS threads.
+const use_zio = options.io_mode == .zio;
+const zio = if (use_zio) @import("zio") else void;
+
 pub fn main(init: std.process.Init) !void {
+    const rt = if (use_zio) try zio.Runtime.init(init.gpa, .{ .executors = .auto }) else {};
+    defer if (use_zio) rt.deinit();
+    const io: Io = if (use_zio) rt.io() else init.io;
+
+    if (use_zio) {
+        const n = rt.options.executors.resolve();
+        std.debug.print("IO backend: zio (stackful coroutines, {d} executor threads)\n", .{n});
+    } else {
+        std.debug.print("IO backend: std Io.Threaded\n", .{});
+    }
+
     var server = try datastar.HTTPServer.init(init, .{
         .port = 8090,
+        .io = io,
         .allocator = std.heap.smp_allocator,
         .log = .{
             .format = .terminal,
             .theme = .monochrom,
         },
         .watch = true,
-        .threads = 255,
         .fd_limit = .max,
-        // comment this out to return to using sane threads
-        .sse_concurrency = .fibers,
     });
     defer server.deinit();
 

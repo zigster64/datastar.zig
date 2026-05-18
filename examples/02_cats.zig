@@ -7,6 +7,10 @@ const HTTPRequest = datastar.HTTPRequest;
 const pubsub = datastar.pubsub;
 const options = @import("options");
 
+// Selected at build time via `-Dio=zio`.
+const use_zio = options.io_mode == .zio;
+const zio = if (use_zio) @import("zio") else void;
+
 const PORT = 8082;
 
 pub const std_options = std.Options{ .log_level = .debug };
@@ -14,11 +18,16 @@ pub const std_options = std.Options{ .log_level = .debug };
 // This example demonstrates a simple auction site that uses
 // SSE and pub/sub to have realtime updates of bids on a Cat auction
 pub fn main(init: std.process.Init) !void {
+    const rt = if (use_zio) try zio.Runtime.init(init.gpa, .{ .executors = .auto }) else {};
+    defer if (use_zio) rt.deinit();
+    const io: Io = if (use_zio) rt.io() else init.io;
+
+    if (use_zio) std.log.info("🌀 IO backend: zio (stackful coroutines)", .{}) else std.log.info("🧵 IO backend: std Io.Threaded", .{});
+
     // create the server
     var server = try datastar.HTTPServer.init(init, .{
         .port = PORT,
-        .allocator = if (options.enable_fibers) std.heap.smp_allocator else null,
-        .sse_concurrency = if (options.enable_fibers) .fibers else .threads,
+        .io = io,
         .watch = true,
         .fd_limit = .limited(2048),
     });

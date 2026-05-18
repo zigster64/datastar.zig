@@ -1,6 +1,10 @@
-# datastar.zig
+# datastar.zig - ZIO branch
 
 A Zig 0.16 SDK for [Datastar](https://data-star.dev) — patch DOM elements, patch signals, and execute scripts on the browser from your backend over SSE.
+
+This branch adds an **opt-in `-Dio=zio` build flag** for the examples that swaps the stdlib `Io.Threaded` implementation for [`lalinsky/zio`](https://github.com/lalinsky/zio) — stackful coroutines instead of OS threads. See [Selecting the IO backend](#selecting-the-io-backend).
+
+Background reading: https://lalinsky.com/2026/05/11/async-io-in-zig-016-today.html
 
 ![Cyberpunk Datastar Zig SDK - Sydney Metro Rail - Leica XV](assets/datastar.zig.jpg)
 
@@ -15,6 +19,7 @@ For stable Zig 0.15.2, see [`datastar.http.zig`](https://github.com/zigster64/da
 ## Zig Version
 
 Requires Zig **0.16.0** or newer. Tracks the `0.16.0` release.
+
 
 ## Table of Contents
 
@@ -200,6 +205,48 @@ The same kitchen-sink demo is also wired up to two third-party HTTP frameworks, 
 | `zig build dusty`    | `example_1_dusty`   | [`lalinsky/dusty`](https://github.com/lalinsky/dusty)           | `examples/01_basic_dusty.zig`   |
 
 Both run on the same `:8081` port and serve the same UI as `example_1` — the navbar shows which web server is driving the page.
+
+### Selecting the IO backend
+
+The example programs accept a `-Dio=` build flag that picks the `std.Io` implementation used at runtime:
+
+```bash
+zig build example_1              # default: -Dio=std  (stdlib Io.Threaded)
+zig build example_1 -Dio=zio     # use lalinsky/zio (stackful coroutines)
+```
+
+| Flag        | Backend                | Notes                                                                  |
+| ----------- | ---------------------- | ---------------------------------------------------------------------- |
+| `-Dio=std`  | `std.Io.Threaded`      | Default. Handlers run on OS threads — no extra deps in the binary.     |
+| `-Dio=zio`  | [`zio`](https://github.com/lalinsky/zio) `Runtime` | Spawns a zio runtime in `main` and hands its `std.Io` to the server, so handler IO suspends on coroutines rather than blocking threads. |
+
+On startup the example logs which backend it's using:
+
+```
+info: 🧵 IO backend: std Io.Threaded            # default
+info: 🌀 IO backend: zio (stackful coroutines)  # -Dio=zio
+```
+
+How it's wired:
+
+- `build.zig` exposes the flag via `b.option(IoMode, "io", ...)` and, when `-Dio=zio` is set, adds the `zio` module to every example.
+- Only `examples/01_basic.zig` currently *uses* the option — the other examples pick up the module so they're ready to be ported. The relevant snippet from `01_basic.zig`:
+
+  ```zig
+  const use_zio = options.io_mode == .zio;
+  const zio = if (use_zio) @import("zio") else void;
+
+  pub fn main(init: std.process.Init) !void {
+      const rt = if (use_zio) try zio.Runtime.init(init.gpa, .{}) else {};
+      defer if (use_zio) rt.deinit();
+      const io: std.Io = if (use_zio) rt.io() else init.io;
+
+      var server = try datastar.HTTPServer.init(init, .{ .port = 8081, .io = io, ... });
+      ...
+  }
+  ```
+
+  The `if (use_zio) @import("zio") else void` pattern keeps the `zio` import behind a comptime branch, so the `-Dio=std` build doesn't need the `zio` module at all.
 
 ## Bundled HTTP server
 
