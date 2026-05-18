@@ -8,7 +8,7 @@ A Zig 0.16 SDK for [Datastar](https://data-star.dev) — patch DOM elements, pat
 - **Full Datastar wire protocol.** Raw + `Fmt` variants, HTML / SVG / MathML namespaces, `view_transition`, `only_if_missing`, custom script attributes, event IDs, retry duration — everything from the [Datastar SDK ADR](https://github.com/starfederation/datastar/blob/develop/sdk/ADR.md).
 - **Passes the official Datastar validation suite.**
 - **Includes a bundled Datastar-aware HTTP server** if you don't already have a framework — fast radix-tree router, batched + sync SSE, hot reload — see [Bundled HTTP server](#bundled-http-server).
-- **Sibling pub/sub bus** via [`pubsub.zig`](https://github.com/zigster64/pubsub.zig) for multi-player apps.
+- **Bundled in-process pub/sub** via [`pubsub.zig`](https://github.com/zigster64/pubsub.zig) — enough to do CQRS in a single binary, with a clean off-ramp to NATS / Redis / Postgres listen-notify when you outgrow it. See [Pub/Sub and CQRS](#pubsub-and-cqrs).
 
 For stable Zig 0.15.2, see [`datastar.http.zig`](https://github.com/zigster64/datastar.http.zig).
 
@@ -24,6 +24,7 @@ Requires Zig **0.16.0** or newer. Tracks the `0.16.0` release.
 - [Plug it into your framework](#plug-it-into-your-framework)
 - [Build, Run, Test](#build-run-test)
 - [Bundled HTTP server](#bundled-http-server)
+- [Pub/Sub and CQRS](#pubsub-and-cqrs)
 - [Roadmap](#roadmap)
 - [More on Datastar](#more-on-datastar)
 
@@ -279,6 +280,47 @@ Server config (see `Config` in `src/server.zig`):
 ```
 
 The full prose walkthrough — batched vs sync writes, hot reload setup, pub/sub patterns, header tricks, validation harness, benchmarking notes — lives in `TUTORIAL.md`.
+
+## Pub/Sub and CQRS
+
+Reactive, multi-player Datastar apps almost always end up doing CQRS in miniature: a `POST /bid` command mutates state, and every connected SSE stream that cares about that state needs to be told to re-render. That requires an in-process message bus to fan out from the command handler to all the long-lived SSE subscribers.
+
+To make this possible out of the box, the SDK bundles [`pubsub.zig`](https://github.com/zigster64/pubsub.zig) — a small in-process broker built specifically for these Datastar SSE runners. It is wired up automatically as part of the `datastar` module and the bundled HTTP server, so there is nothing extra to add to `build.zig`:
+
+```zig
+const datastar = @import("datastar");
+const pubsub = datastar.pubsub;   // re-exported for convenience
+```
+
+A typical CQRS loop looks like this — a query handler subscribes and streams updates, and a command handler publishes after mutating state:
+
+```zig
+// Query side: long-lived SSE that re-renders whenever `cats` is published
+fn catsList(app: *App, http: *HTTPRequest) !void {
+    var sse = try http.NewSSESync();
+    defer sse.close();
+    try pushCatList(app, &sse);            // initial render
+
+    var mq = try app.pubsub.connect();
+    defer mq.deinit();
+    try mq.subscribe(.cats);
+
+    while (try mq.nextTimeout(.fromSeconds(30))) |event| switch (event) {
+        .msg     => try pushCatList(app, &sse),
+        .timeout => try sse.keepalive(),
+    }
+}
+
+// Command side: mutate, then publish
+fn postBid(app: *App, http: *HTTPRequest) !void {
+    // ... validate + apply the bid ...
+    try app.pubsub.publish(.{ .cats = {} }, .all);
+}
+```
+
+You don't have to use the bundled broker. It is bundled because it's the shortest path from "single binary" to "working multi-player demo", and because every example app in this repo that needs fan-out uses it (`example_2`, `example_3`, `example_5`). When you outgrow single-process — multiple app instances, durability, cross-language consumers — swap it for **NATS**, **Redis pub/sub**, **Postgres LISTEN/NOTIFY**, or any other broker. The handler shape stays the same: subscribe, loop, render on each message; publish from the command handler. Only the `connect` / `subscribe` / `publish` calls change.
+
+See `examples/02_cats.zig` for a complete worked example, and the *Publish and Subscribe* section of `TUTORIAL.md` for the longer walkthrough.
 
 ## Roadmap
 
