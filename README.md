@@ -252,7 +252,8 @@ Group middleware functions into named pipelines with `server.pipeline()`, then a
 const publicPipe  = try server.pipeline(&.{ logMw, corsMw });
 const userPipe    = try server.pipeline(&.{ sessionMw, authMw });
 const adminPipe   = try server.pipeline(&.{ sessionMw, authMw, adminMw });
-const auditPipe   = try server.pipeline(&.{ loggingMw });
+// auditPipe inherits adminPipe's chain + adds its own
+const auditPipe   = try server.pipelineExtend(adminPipe, &.{ dashboardAuditMw });
 
 // Global — runs on every request
 server.usePipeline(publicPipe);
@@ -266,7 +267,7 @@ r.get("/", index);
 r.getOpt("/admin/dashboard", dashboardHandler, .{ .pipeline = auditPipe });
 ```
 
-A request to `/admin/dashboard` runs: `logMw → corsMw` (global) → `sessionMw → authMw → adminMw` (group) → `auditMw` (route) → handler.
+A request to `/admin/dashboard` runs: `logMw → corsMw` (global) → `sessionMw → authMw → adminMw` (group) → `sessionMw → authMw → adminMw → dashboardAuditMw` (route) → handler.
 
 All three levels are optional. `server.use(fn)` is a convenience wrapper that appends a single function to the global pipeline — use it for quick one-offs. `router.get` / `post` / etc. without `Opt` register routes with no extra pipeline. The pipeline runs **after** route matching (so `http.params` is populated) but **before** the route handler. If middleware sets `http.halted = true`, the remaining middleware and the handler are skipped.
 

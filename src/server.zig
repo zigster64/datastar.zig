@@ -319,6 +319,16 @@ pub fn pipeline(self: *Server, funcs: []const types.Func) !*const types.Pipeline
     return p;
 }
 
+/// Create a pipeline that extends an existing one with additional functions.
+/// Useful for composing role-based pipelines (e.g. adminPipe + auditMw → auditPipe).
+pub fn pipelineExtend(self: *Server, base: *const types.Pipeline, funcs: []const types.Func) !*const types.Pipeline {
+    const p = try self.arena.allocator().create(types.Pipeline);
+    p.chain = .empty;
+    try p.chain.appendSlice(self.arena.allocator(), base.chain.items);
+    try p.chain.appendSlice(self.arena.allocator(), funcs);
+    return p;
+}
+
 /// Register a pipeline globally. Runs before every route handler.
 pub fn usePipeline(self: *Server, p: *const types.Pipeline) void {
     self.common_pipeline = p;

@@ -12,4 +12,14 @@ pub const Chain = std.ArrayList(Func);
 /// pipeline + the /admin group pipeline + any route-level pipeline.
 pub const Pipeline = struct {
     chain: Chain = .empty,
+
+    /// Return a new pipeline that inherits this one's chain plus extra funcs.
+    /// The returned Pipeline owns its chain in `allocator`; the caller decides
+    /// where the Pipeline value itself lives (stack, heap, arena).
+    pub fn extend(self: *const Pipeline, allocator: std.mem.Allocator, funcs: []const Func) !Pipeline {
+        var p = Pipeline{ .chain = .empty };
+        try p.chain.appendSlice(allocator, self.chain.items);
+        try p.chain.appendSlice(allocator, funcs);
+        return p;
+    }
 };
