@@ -1,6 +1,7 @@
 # datastar.zig - A Web Framework for Zig 0.16
 
-**A Datastar-aware HTTP server for Zig 0.16.**
+**A Datastar-aware HTTP server for Zig 0.16. using Datastar v1.0.2**
+
 
 Build realtime collaborative web apps where the backend pushes DOM patches, signal updates, and browser scripts to connected clients over a fast SSE pipe. Single binary, no JS bundler, no frontend framework.
 
@@ -32,6 +33,7 @@ Requires Zig **0.16.0** or newer. Tracks the `0.16.0` release.
 - [Performance](#performance)
 - [Build, Run, Test](#build-run-test)
 - [Using just the SDK](#using-just-the-sdk)
+- [Snippets for Datastar Docs](#snippets)
 - [More on Datastar](#more-on-datastar)
 
 ## Quick Example
@@ -436,6 +438,10 @@ fn readSignalsAnyFramework(
     );
 }
 ```
+
+## Snippets
+
+For backend code snippets for the Datastar docs, see [SNIPPETS.md](SNIPPETS.md)
 
 ## More on Datastar
 
