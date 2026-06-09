@@ -230,6 +230,8 @@ The full walkthrough — batched vs sync writes, hot-reload setup, pub/sub patte
 
 ## Middleware
 
+The Datastar framework includes middleware heavily inspired by Erlang / Elixir 'Plug' architecture. 
+
 Middleware functions run in registration order before every route handler. Use them for auth, logging, rate limiting, request tracing — anything that should apply across routes.
 
 A middleware is a function that takes `*HTTPRequest` and returns `!void`. It can inspect the request, set headers, attach data for downstream handlers, or short-circuit by setting `http.halted = true`:
