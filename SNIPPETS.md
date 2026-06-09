@@ -14,7 +14,6 @@ fn openTheDoorsHal(http: *datastar.HTTPRequest) !void {
     try sse.patchElements(
         \\<div id="hal">I’m sorry, Dave. I’m afraid I can’t do that.</div>
         , .{});
-    );
 
     try http.io.sleep(.fromSeconds(1), .real);
 
@@ -44,23 +43,21 @@ fn doYouReadMeHAL(http: *datastar.HTTPRequest) !void {
         .hal = "...",
     }, .{}, .{});
 }
-
 ```
 
 ## Reading Signals Example
 
-
 ```zig
 const datastar = @import("datastar");
 
-const Signals = struct {
+pub const Signals = struct {
     foo: struct {
         bar: []const u8,
     },
 };
 
-fn yourHandler(http: *datastar.HTTPRequest) !void {
+pub fn handleIncomingRequest(http: *datastar.HTTPRequest) !void {
     const signals = try datastar.readSignals(Signals);
-    // ... use signals ...
+    // ... use signals
 }
 ```
