@@ -252,6 +252,7 @@ Group middleware functions into named pipelines with `server.pipeline()`, then a
 const publicPipe  = try server.pipeline(&.{ logMw, corsMw });
 const userPipe    = try server.pipeline(&.{ sessionMw, authMw });
 const adminPipe   = try server.pipeline(&.{ sessionMw, authMw, adminMw });
+const auditPipe   = try server.pipeline(&.{ loggingMw });
 
 // Global — runs on every request
 server.usePipeline(publicPipe);
