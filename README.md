@@ -265,13 +265,13 @@ fn requestInfoMiddleware(http: *HTTPRequest) !void {
 
 // Handler: read the assigned data
 fn myHandler(http: *HTTPRequest) !void {
-    const id: usize = if (http.assigned(usize, "request.id")) |ptr| ptr.* else 0;
-    const started: std.Io.Timestamp = if (http.assigned(std.Io.Timestamp, "request.started")) |ptr| ptr.* else .zero;
+    const id: usize = http.assigned(usize, "request.id") orelse 0;
+    const started: std.Io.Timestamp = http.assigned(std.Io.Timestamp, "request.started") orelse .zero;
     // ...
 }
 ```
 
-The store is a lazy-initialized `std.ArrayList` backed by the per-request arena — no hard capacity limit. Keys are strings (`"auth.user"`, `"tracer.span_id"`) — use namespaced keys to avoid collisions between independent middleware. `assigned()` returns `?*T`; dereference the pointer to get the value. The type parameter must match what was used in `assign()` — the cast is unchecked.
+The store is a lazy-initialized `std.ArrayList` backed by the per-request arena — no hard capacity limit. Keys are strings (`"auth.user"`, `"tracer.span_id"`) — use namespaced keys to avoid collisions between independent middleware. `assigned()` returns `?T` — use `orelse` for a clean default. The type parameter must match what was used in `assign()` — the cast is unchecked.
 
 ### Error handling
 

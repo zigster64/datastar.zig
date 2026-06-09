@@ -23,8 +23,8 @@ fn middlewareDemo(http: *HTTPRequest) !void {
     var sse = try http.NewSSE();
     defer sse.close();
 
-    const id: usize = if (http.assigned(usize, "mw.request_id")) |ptr| ptr.* else 0;
-    const start_time: Io.Timestamp = if (http.assigned(Io.Timestamp, "mw.start_time")) |ptr| ptr.* else .zero;
+    const id: usize = http.assigned(usize, "mw.request_id") orelse 0;
+    const start_time: Io.Timestamp = http.assigned(Io.Timestamp, "mw.start_time") orelse .zero;
     const elapsed = start_time.untilNow(http.io, .real).toMicroseconds();
 
     try sse.patchElementsFmt(

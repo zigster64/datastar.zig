@@ -81,11 +81,12 @@ pub fn assign(self: *HTTPRequest, comptime T: type, key: []const u8, value: T) !
 /// Returns null if no value with the given key exists.
 /// The caller must match the type parameter used in assign() —
 /// mismatched type results in undefined behaviour.
-pub fn assigned(self: *HTTPRequest, comptime T: type, key: []const u8) ?*T {
+pub fn assigned(self: *HTTPRequest, comptime T: type, key: []const u8) ?T {
     const list = self.assigns orelse return null;
     for (list.items) |entry| {
         if (std.mem.eql(u8, entry.key, key)) {
-            return @ptrCast(@alignCast(entry.value));
+            const ptr: *T = @ptrCast(@alignCast(entry.value));
+            return ptr.*;
         }
     }
     return null;
