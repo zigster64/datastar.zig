@@ -60,7 +60,7 @@ const Signals = struct {
 };
 
 fn yourHandler(http: *datastar.HTTPRequest) !void {
-    const signals = try datastar.readSignals(Signals, allocator, request);
+    const signals = try datastar.readSignals(Signals);
     // ... use signals ...
 }
 ```
