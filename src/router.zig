@@ -133,8 +133,14 @@ pub fn group(self: *Router, prefix: []const u8, pipeline: *const Pipeline) !void
         const is_param = std.mem.startsWith(u8, seg, ":");
         var found: ?*Node = null;
         for (current.children.items) |child| {
-            if (is_param and child.is_param) { found = child; break; }
-            if (!is_param and std.mem.eql(u8, child.segment, seg)) { found = child; break; }
+            if (is_param and child.is_param) {
+                found = child;
+                break;
+            }
+            if (!is_param and std.mem.eql(u8, child.segment, seg)) {
+                found = child;
+                break;
+            }
         }
         if (found) |node| {
             current = node;
@@ -160,8 +166,14 @@ pub fn addOpt(self: *Router, method: std.http.Method, path: []const u8, handler:
         const is_param = std.mem.startsWith(u8, seg, ":");
         var found: ?*Node = null;
         for (current.children.items) |child| {
-            if (is_param and child.is_param) { found = child; break; }
-            if (!is_param and std.mem.eql(u8, child.segment, seg)) { found = child; break; }
+            if (is_param and child.is_param) {
+                found = child;
+                break;
+            }
+            if (!is_param and std.mem.eql(u8, child.segment, seg)) {
+                found = child;
+                break;
+            }
         }
         if (found) |node| {
             current = node;
@@ -273,7 +285,10 @@ pub fn dispatch(self: *Router, http: *HTTPRequest) !void {
 
         if (match) |m| {
             current = m;
-            if (visited_len < visited_nodes.len) { visited_nodes[visited_len] = current; visited_len += 1; }
+            if (visited_len < visited_nodes.len) {
+                visited_nodes[visited_len] = current;
+                visited_len += 1;
+            }
         } else {
             // didnt find it - check if its a static file asset to serve up
             if (self.static_dir) |sd| {

@@ -230,9 +230,7 @@ The full walkthrough — batched vs sync writes, hot-reload setup, pub/sub patte
 
 ## Middleware
 
-The Datastar framework includes middleware heavily inspired by Erlang / Elixir 'Plug' architecture. 
-
-Middleware functions run in registration order before every route handler. Use them for auth, logging, rate limiting, request tracing — anything that should apply across routes.
+Middleware functions run in **pipelines** — ordered lists of functions that execute before route handlers. Use them for auth, logging, rate limiting, request tracing — anything that should apply across routes.
 
 A middleware is a function that takes `*HTTPRequest` and returns `!void`. It can inspect the request, set headers, attach data for downstream handlers, or short-circuit by setting `http.halted = true`:
 
@@ -245,13 +243,31 @@ fn authMiddleware(http: *HTTPRequest) !void {
 }
 ```
 
-Register with `server.use()`:
+### Pipelines
+
+Group middleware functions into named pipelines with `server.pipeline()`, then assign them at three levels. Pipelines **accumulate** — a request picks up the global pipeline, then each matching route-group pipeline, then the route-level pipeline, all in order:
 
 ```zig
-try server.use(authMiddleware);
+// Define pipelines
+const publicPipe  = try server.pipeline(&.{ logMw, corsMw });
+const userPipe    = try server.pipeline(&.{ sessionMw, authMw });
+const adminPipe   = try server.pipeline(&.{ sessionMw, authMw, adminMw });
+
+// Global — runs on every request
+server.usePipeline(publicPipe);
+
+// Route group — all routes under /admin pick up adminPipe
+try server.router.group("/admin", adminPipe);
+
+// Per-route — extra pipeline on a specific endpoint
+const r = server.router;
+r.get("/", index);
+r.getOpt("/admin/dashboard", dashboardHandler, .{ .pipeline = auditPipe });
 ```
 
-The pipeline runs **after** route matching (so `http.params` is populated) but **before** the route handler. If middleware sets `http.halted = true`, the remaining middleware and the handler are skipped.
+A request to `/admin/dashboard` runs: `logMw → corsMw` (global) → `sessionMw → authMw → adminMw` (group) → `auditMw` (route) → handler.
+
+All three levels are optional. `server.use(fn)` is a convenience wrapper that appends a single function to the global pipeline — use it for quick one-offs. `router.get` / `post` / etc. without `Opt` register routes with no extra pipeline. The pipeline runs **after** route matching (so `http.params` is populated) but **before** the route handler. If middleware sets `http.halted = true`, the remaining middleware and the handler are skipped.
 
 ### Per-request assigns
 
@@ -288,9 +304,9 @@ fn robustMiddleware(http: *HTTPRequest) !void {
 }
 ```
 
-### Built-in middleware futures
+### Logging
 
-Logging currently runs inline in the dispatcher. The `TODO` marker on the logging block in `src/router.zig` is a placeholder for extracting it into a default logging middleware that can be removed or replaced — the infrastructure supports it; the extraction hasn't shipped yet.
+Request logging runs automatically after every handler via `log.logRequest()`. Configured through the `Log` struct in server config — level (none/path/payload/signals/all), format (terminal/json), theme (classic/newwave/monochrom), and timing thresholds. The logger is called from dispatch, not middleware, so elapsed time is measured correctly. To disable logging, set `.level = .none` in the server config.
 
 See `examples/01_basic.zig` tab 12 for a complete working middleware demo.
 
