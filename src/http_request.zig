@@ -44,9 +44,9 @@ timer: std.Io.Timestamp = undefined,
     /// route handler are skipped when true.
     halted: bool = false,
 
-    /// Opaque pointer to the server's Middleware chain. Set by the framework
-    /// before dispatch. Cast to *const Middleware when needed.
-    _middleware: ?*anyopaque = null,
+    /// Opaque pointer to the server's global pipeline. Set by the framework
+    /// before dispatch. Cast to *const Pipeline when needed.
+    _global_pipeline: ?*anyopaque = null,
 
 /// Entry in the assigns store. Keys are arena-duped strings; values are
 /// arena-allocated typed pointers cast to *anyopaque.

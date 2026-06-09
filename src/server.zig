@@ -27,7 +27,8 @@ server: Io.net.Server = undefined,
 router: *Router,
 ctx: ?*anyopaque = null,
 log: Log = undefined,
-middleware: ?*types.Middleware = null,
+    /// Global pipeline — runs before every route. Set via usePipeline().
+    common_pipeline: ?*const types.Pipeline = null,
 watch: bool = false,
 fd_limit: ?FDLimit = null,
 read_buffer_size: usize = 4 * 1024,
@@ -209,7 +210,7 @@ fn handleConnection(self: *Server, conn: Io.net.Stream) Io.Cancelable!void {
             .log = self.log,
         };
 
-        http._middleware = if (self.middleware) |mw| @ptrCast(mw) else null;
+        http._global_pipeline = if (self.common_pipeline) |p| @ptrCast(@constCast(p)) else null;
 
         self.router.dispatch(&http) catch return;
 
@@ -308,17 +309,29 @@ fn setFdLimits(self: *Server) !void {
     }
 }
 
-// Register middleware in the request pipeline for this server.
-// Middleware runs in registration order before every route handler.
-// Use http.halted = true inside a middleware to stop the pipeline.
-// Errors returned by middleware result in a 500 response.
+/// Create a named pipeline from a list of middleware functions.
+/// Pipelines can be assigned globally (usePipeline), to route groups (router.group),
+/// or to individual routes (getOpt / postOpt etc.).
+pub fn pipeline(self: *Server, funcs: []const types.Func) !*const types.Pipeline {
+    const p = try self.arena.allocator().create(types.Pipeline);
+    p.chain = .empty;
+    try p.chain.appendSlice(self.arena.allocator(), funcs);
+    return p;
+}
+
+/// Register a pipeline globally. Runs before every route handler.
+pub fn usePipeline(self: *Server, p: *const types.Pipeline) void {
+    self.common_pipeline = p;
+}
+
+/// Register a single middleware function globally (convenience wrapper).
+/// For multiple functions, use pipeline() + usePipeline() instead.
 pub fn use(self: *Server, handler: types.Func) !void {
-    if (self.middleware == null) {
-        const mw_ptr = try self.arena.allocator().create(types.Middleware);
-        mw_ptr.* = .{ .chain = .empty };
-        self.middleware = mw_ptr;
+    if (self.common_pipeline == null) {
+        self.common_pipeline = try self.pipeline(&.{handler});
+    } else {
+        try @constCast(self.common_pipeline.?).chain.append(self.arena.allocator(), handler);
     }
-    try self.middleware.?.chain.append(self.arena.allocator(), handler);
 }
 
 const TestApp = struct { data: i32 };

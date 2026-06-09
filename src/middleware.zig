@@ -2,13 +2,14 @@ const std = @import("std");
 const HTTPRequest = @import("http_request.zig");
 
 /// Middleware function signature.
-/// Receives the request, may mutate it, may set http.halted = true to stop
-/// the pipeline. Errors are caught by the dispatch loop and result in a
-/// 500 response.
 pub const Func = *const fn (req: *HTTPRequest) anyerror!void;
 
 pub const Chain = std.ArrayList(Func);
 
-pub const Middleware = struct {
-    chain: Chain,
+/// A named pipeline of middleware functions. Created via server.pipeline()
+/// and assigned to the server (global), route groups, or individual routes.
+/// Pipelines accumulate: a request to /admin/dashboard picks up the global
+/// pipeline + the /admin group pipeline + any route-level pipeline.
+pub const Pipeline = struct {
+    chain: Chain = .empty,
 };
