@@ -13,6 +13,7 @@ const Log = @import("log.zig");
 const Params = @import("params.zig");
 const Router = @import("router.zig");
 const RouteHandler = Router.RouteHandler;
+const types = @import("middleware.zig");
 
 // probably gonna get deprecated soon ?
 
@@ -26,7 +27,7 @@ server: Io.net.Server = undefined,
 router: *Router,
 ctx: ?*anyopaque = null,
 log: Log = undefined,
-middleware: ?*Middleware = null,
+middleware: ?*types.Middleware = null,
 watch: bool = false,
 fd_limit: ?FDLimit = null,
 read_buffer_size: usize = 4 * 1024,
@@ -208,6 +209,8 @@ fn handleConnection(self: *Server, conn: Io.net.Stream) Io.Cancelable!void {
             .log = self.log,
         };
 
+        http._middleware = if (self.middleware) |mw| @ptrCast(mw) else null;
+
         self.router.dispatch(&http) catch return;
 
         // Anything asking for a Sync SSE connection will detach the request from this inner loop
@@ -305,62 +308,17 @@ fn setFdLimits(self: *Server) !void {
     }
 }
 
-// Middleware functions take a HTTPRequest, and return
-// - err if there is an error, no more processing
-// - true = continue, hand over to the next middleware in the chain
-// - false = do not continue .. response has been sent already, no more middleware
-const MiddlewareFunc = *const fn (req: HTTPRequest) anyerror!bool;
-const Middlewares = std.ArrayList(MiddlewareFunc);
-
-const Middleware = struct {
-    before: ?*Middlewares = null,
-    after: ?*Middlewares = null,
-    err: ?*Middlewares = null,
-};
-
-// Regiter onBefore middleware
-pub fn onBefore(self: *HTTPRequest, func: MiddlewareFunc) !void {
+// Register middleware in the request pipeline for this server.
+// Middleware runs in registration order before every route handler.
+// Use http.halted = true inside a middleware to stop the pipeline.
+// Errors returned by middleware result in a 500 response.
+pub fn use(self: *Server, handler: types.Func) !void {
     if (self.middleware == null) {
-        self.middleware = try self.arena.create(Middleware);
-        self.middleware.* = .{};
+        const mw_ptr = try self.arena.allocator().create(types.Middleware);
+        mw_ptr.* = .{ .chain = .empty };
+        self.middleware = mw_ptr;
     }
-    std.debug.assert(self.middleware != null);
-    if (self.middleware.before == null) {
-        self.middleware.before = try self.arena.create(Middlewares);
-        self.middleware.before = .{};
-    }
-    std.debug.assert(self.middleware.before != null);
-    try self.middleware.before.?.append(self.arena, func);
-}
-
-// Register onAfter middleware
-pub fn onAfter(self: *HTTPRequest, func: MiddlewareFunc) !void {
-    if (self.middleware == null) {
-        self.middleware = try self.arena.create(Middleware);
-        self.middleware.* = .{};
-    }
-    std.debug.assert(self.middleware != null);
-    if (self.middleware.after == null) {
-        self.middleware.after = try self.arena.create(Middlewares);
-        self.middleware.after = .{};
-    }
-    std.debug.assert(self.middleware.after != null);
-    try self.middleware.after.?.append(self.arena, func);
-}
-
-// Register onError middleware
-pub fn onError(self: *HTTPRequest, func: MiddlewareFunc) !void {
-    if (self.middleware == null) {
-        self.middleware = try self.arena.create(Middleware);
-        self.middleware.* = .{};
-    }
-    std.debug.assert(self.middleware != null);
-    if (self.middleware.err == null) {
-        self.middleware.err = try self.arena.create(Middlewares);
-        self.middleware.err = .{};
-    }
-    std.debug.assert(self.middleware.err != null);
-    try self.middleware.err.?.append(self.arena, func);
+    try self.middleware.?.chain.append(self.arena.allocator(), handler);
 }
 
 const TestApp = struct { data: i32 };

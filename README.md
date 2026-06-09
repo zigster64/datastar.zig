@@ -32,6 +32,7 @@ The JSON output is always set to minified now.
 - [Run the demos](#run-the-demos)
 - [Installation](#installation)
 - [The HTTP Server](#the-http-server)
+- [Middleware](#middleware)
 - [Selecting the IO backend](#selecting-the-io-backend)
 - [Pub/Sub and CQRS](#pubsub-and-cqrs)
 - [Performance](#performance)
@@ -226,6 +227,70 @@ Server config (`Config` in `src/server.zig`):
 **Hot reload during development.** Set `.watch = true`. The server watches its own executable on disk and, when you rebuild, exec's the new binary (via `std.process.replace`) while open browser tabs reconnect automatically. See `examples/01_basic.zig` for the complete pattern, including the client-side stale-tab detection.
 
 The full walkthrough — batched vs sync writes, hot-reload setup, pub/sub patterns, header tricks, validation harness, benchmarking notes — lives in `TUTORIAL.md`.
+
+## Middleware
+
+Middleware functions run in registration order before every route handler. Use them for auth, logging, rate limiting, request tracing — anything that should apply across routes.
+
+A middleware is a function that takes `*HTTPRequest` and returns `!void`. It can inspect the request, set headers, attach data for downstream handlers, or short-circuit by setting `http.halted = true`:
+
+```zig
+fn authMiddleware(http: *HTTPRequest) !void {
+    if (!isAuthenticated(http)) {
+        http.respond("Unauthorized", .unauthorized) catch {};
+        http.halted = true;
+    }
+}
+```
+
+Register with `server.use()`:
+
+```zig
+try server.use(authMiddleware);
+```
+
+The pipeline runs **after** route matching (so `http.params` is populated) but **before** the route handler. If middleware sets `http.halted = true`, the remaining middleware and the handler are skipped.
+
+### Per-request assigns
+
+Middleware can attach typed data to the request via `http.assign()`. Downstream middleware and handlers retrieve it with `http.assigned()`:
+
+```zig
+// Middleware: attach request metadata
+fn requestInfoMiddleware(http: *HTTPRequest) !void {
+    const now = std.Io.Clock.real.now(http.io);
+    _ = try http.assign(usize, "request.id", nextId());
+    _ = try http.assign(std.Io.Timestamp, "request.started", now);
+}
+
+// Handler: read the assigned data
+fn myHandler(http: *HTTPRequest) !void {
+    const id: usize = if (http.assigned(usize, "request.id")) |ptr| ptr.* else 0;
+    const started: std.Io.Timestamp = if (http.assigned(std.Io.Timestamp, "request.started")) |ptr| ptr.* else .zero;
+    // ...
+}
+```
+
+The store is a lazy-initialized `std.ArrayList` backed by the per-request arena — no hard capacity limit. Keys are strings (`"auth.user"`, `"tracer.span_id"`) — use namespaced keys to avoid collisions between independent middleware. `assigned()` returns `?*T`; dereference the pointer to get the value. The type parameter must match what was used in `assign()` — the cast is unchecked.
+
+### Error handling
+
+Errors returned by middleware are caught by the dispatch loop and result in a 500 response. There is no separate error middleware chain — catch errors in your middleware if you need custom recovery:
+
+```zig
+fn robustMiddleware(http: *HTTPRequest) !void {
+    doRiskyThing(http) catch |err| {
+        std.log.warn("middleware recovered from {}", .{err});
+        // continue the pipeline
+    };
+}
+```
+
+### Built-in middleware futures
+
+Logging currently runs inline in the dispatcher. The `TODO` marker on the logging block in `src/router.zig` is a placeholder for extracting it into a default logging middleware that can be removed or replaced — the infrastructure supports it; the extraction hasn't shipped yet.
+
+See `examples/01_basic.zig` tab 12 for a complete working middleware demo.
 
 ## Selecting the IO backend
 

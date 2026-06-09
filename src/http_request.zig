@@ -34,12 +34,61 @@ replied: bool = false,
 req_payload: ?[]const u8 = null,
 status: std.http.Status = .ok,
 timer: std.Io.Timestamp = undefined,
-log: Log = .{},
+    log: Log = .{},
+
+    /// Assigns: typed key-value store for middleware → handler communication.
+    /// Lazy-initialized ArrayList backed by the per-request arena. No hard cap.
+    assigns: ?*std.ArrayList(AssignEntry) = null,
+
+    /// Set by middleware to stop the pipeline. Remaining middleware and the
+    /// route handler are skipped when true.
+    halted: bool = false,
+
+    /// Opaque pointer to the server's Middleware chain. Set by the framework
+    /// before dispatch. Cast to *const Middleware when needed.
+    _middleware: ?*anyopaque = null,
+
+/// Entry in the assigns store. Keys are arena-duped strings; values are
+/// arena-allocated typed pointers cast to *anyopaque.
+pub const AssignEntry = struct {
+    key: []const u8,
+    value: *anyopaque,
+};
 
 /// Return the context as the given type
 pub fn getCtx(http: *HTTPRequest, T: type) T {
     const ptr = http.ctx orelse std.debug.panic("Attempted to access null context", .{});
     return @ptrCast(@alignCast(ptr));
+}
+
+/// Store a typed value under a string key in the request assigns store.
+/// The value is arena-allocated and lives for the request duration.
+/// The store is lazily initialized on first use. No hard capacity limit.
+/// Returns a pointer to the stored value.
+pub fn assign(self: *HTTPRequest, comptime T: type, key: []const u8, value: T) !*T {
+    if (self.assigns == null) {
+        const list = try self.arena.create(std.ArrayList(AssignEntry));
+        list.* = std.ArrayList(AssignEntry).empty;
+        self.assigns = list;
+    }
+    const ptr = try self.arena.create(T);
+    ptr.* = value;
+    try self.assigns.?.append(self.arena, .{ .key = try self.arena.dupe(u8, key), .value = ptr });
+    return ptr;
+}
+
+/// Retrieve a previously stored value by key and type.
+/// Returns null if no value with the given key exists.
+/// The caller must match the type parameter used in assign() —
+/// mismatched type results in undefined behaviour.
+pub fn assigned(self: *HTTPRequest, comptime T: type, key: []const u8) ?*T {
+    const list = self.assigns orelse return null;
+    for (list.items) |entry| {
+        if (std.mem.eql(u8, entry.key, key)) {
+            return @ptrCast(@alignCast(entry.value));
+        }
+    }
+    return null;
 }
 
 /// Return a new SSE object for a simple 1 shot response
