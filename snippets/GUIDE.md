@@ -1,4 +1,4 @@
-# Snippets of backend code for the Datastar Docs
+# Snippets of backend code for the Datastar Docs - GUIDE
 
 ## Open the Pod Bay Doors Hal
 
@@ -39,13 +39,13 @@ fn doYouReadMeHAL(http: *datastar.HTTPRequest) !void {
 
     try sse.patchSignals(.{
         .hal = "Affirmative, Dave. I read you.",
-    }, .{}, .{});
+    }, .{});
 
     try http.io.sleep(.fromSeconds(1), .real);
 
     try sse.patchSignals(.{
         .hal = "...",
-    }, .{}, .{});
+    }, .{});
 }
 ```
 
@@ -100,7 +100,7 @@ try sse.PatchElements(
 try sse.patchSignals(.{
     .response: "",
     .answer: "bread"
-}, .{}, .{});
+}, .{});
 ```
 
 ## Backend Actions
