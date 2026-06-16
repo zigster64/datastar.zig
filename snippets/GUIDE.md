@@ -17,7 +17,7 @@ fn openTheDoorsHal(http: *datastar.HTTPRequest) !void {
         \\<div id="hal">I’m sorry, Dave. I’m afraid I can’t do that.</div>
         , .{});
 
-    try http.io.sleep(.fromSeconds(1), .real);
+    http.io.sleep(.fromSeconds(1), .real) catch {};
 
     try sse.patchElements(
         \\<div id="hal">Waiting for an order...</div>
@@ -41,7 +41,7 @@ fn doYouReadMeHAL(http: *datastar.HTTPRequest) !void {
         .hal = "Affirmative, Dave. I read you.",
     }, .{});
 
-    try http.io.sleep(.fromSeconds(1), .real);
+    http.io.sleep(.fromSeconds(1), .real) catch {};
 
     try sse.patchSignals(.{
         .hal = "...",
