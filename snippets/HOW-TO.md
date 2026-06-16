@@ -81,3 +81,51 @@ fn redirectHandler(http: *datastar.HTTPRequest) !void {
         .{});
 }
 ```
+
+Firefox workaround - 
+
+
+```zig
+const datastar = @import("datastar");
+
+fn redirectFirefoxHandler(http: *datastar.HTTPRequest) !void {
+    var sse = try http.NewSSE();
+    defer sse.close();
+
+    try sse.patchElements(
+        \\<div id="indicator">Redirecting in 3 seconds...</div>
+        , .{});
+    http.io.sleep(.fromSeconds(3), .real) catch {};
+    try sse.executeScript(
+        \\setTimeout(() => window.location = "/guide")
+        .{});
+}
+```
+
+With 3 secord timeout - use the same code
+
+The docs say this :
+```
+Some SDKs provide a helper method that automatically wraps the statement in a setTimeout function call, so you don’t have to worry about doing so (you’re welcome!).
+```
+... but from what I can see, ALL the provided code uses the exact same sleep method
+as the initial example.
+
+```zig
+const datastar = @import("datastar");
+
+fn redirectHandler(http: *datastar.HTTPRequest) !void {
+    var sse = try http.NewSSE();
+    defer sse.close();
+
+    try sse.patchElements(
+        \\<div id="indicator">Redirecting in 3 seconds...</div>
+        , .{});
+    http.io.sleep(.fromSeconds(3), .real) catch {};
+    try sse.executeScript(
+        \\window.location = "/guide"
+        .{});
+}
+```
+
+
