@@ -27,7 +27,7 @@ fn listHandler(http: *datastar.HTTPRequest) !void {
         });
 
         if (newOffset.offset < max) {
-            try sse.patchSignals(.{.offset = newOFfset}, .{});
+            try sse.patchSignals(.{.offset = newOffset}, .{});
         } else {
             try sse.patchElements("", .{
                 .selector = "#load-more",
