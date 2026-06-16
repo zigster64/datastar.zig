@@ -390,7 +390,7 @@ const App = struct {
             std.log.info("New pref is {t}", .{prefs.sort});
             try sse.patchSignals(.{
                 .sort = @tagName(prefs.sort),
-            }, .{}, .{});
+            }, .{});
         }
     }
 };

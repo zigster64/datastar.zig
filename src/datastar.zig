@@ -253,12 +253,12 @@ pub const SSE = struct {
         return &self.msg.?.interface;
     }
 
-    pub fn patchSignals(self: *SSE, value: anytype, json_opt: std.json.Stringify.Options, opt: PatchSignalsOptions) !void {
+    pub fn patchSignals(self: *SSE, value: anytype, opt: PatchSignalsOptions) !void {
         var msg: Message = .{};
         msg.init(.patchSignals, opt, &self.output_buffer.writer);
         try msg.header();
 
-        const json_formatter = std.json.fmt(value, json_opt);
+        const json_formatter = std.json.fmt(value, .{});
         try json_formatter.format(&msg.interface);
         try msg.end();
         try self.flush();

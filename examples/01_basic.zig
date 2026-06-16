@@ -232,7 +232,7 @@ fn patchSignals(http: *HTTPRequest) !void {
     try sse.patchSignals(.{
         .foo = foo,
         .bar = bar,
-    }, .{}, .{});
+    }, .{});
 }
 
 fn patchSignalsOnlyIfMissing(http: *HTTPRequest) !void {
@@ -248,7 +248,6 @@ fn patchSignalsOnlyIfMissing(http: *HTTPRequest) !void {
             .newfoo = foo,
             .newbar = bar,
         },
-        .{},
         .{ .only_if_missing = true },
     );
 
@@ -404,7 +403,7 @@ fn mathMorph(http: *HTTPRequest) !void {
             .{prng.random().intRangeAtMost(u16, 2, 22)},
             .{ .namespace = .mathml, .view_transition = true },
         );
-        try sse.patchSignals(.{ .mathmlMorph = 1 }, .{}, .{});
+        try sse.patchSignals(.{ .mathmlMorph = 1 }, .{});
         return;
     }
 
@@ -422,7 +421,7 @@ fn mathMorph(http: *HTTPRequest) !void {
         try sse.patchElements(mathMLs[r - 1], .{ .namespace = .mathml });
         try http.io.sleep(.fromMilliseconds(delay), .real);
     }
-    try sse.patchSignals(.{ .mathmlMorph = 1 }, .{}, .{});
+    try sse.patchSignals(.{ .mathmlMorph = 1 }, .{});
 }
 
 fn code(http: *HTTPRequest) !void {

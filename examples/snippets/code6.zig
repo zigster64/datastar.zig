@@ -11,6 +11,5 @@ try sse.patchSignals(
         .new_foo = foo,
         .new_bar = bar,
     },
-    .{},
     .{ .only_if_missing = true },
 );

@@ -179,7 +179,7 @@ fn runTest(http: *HTTPRequest) !void {
 
             // Check if the 'signals' field was present and parsed
             if (event.signals) |signals| {
-                try sse.patchSignals(signals, .{}, .{
+                try sse.patchSignals(signals, .{
                     .only_if_missing = event.onlyIfMissing orelse false,
                     .event_id = event.eventId,
                     .retry_duration = event.retryDuration,

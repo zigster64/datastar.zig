@@ -14,7 +14,7 @@ if (opt.mathmlMorph == 1) {
         .{prng.random().intRangeAtMost(u16, 2, 22)},
         .{ .namespace = .mathml, .view_transition = true },
     );
-    try sse.patchSignals(.{ .mathmlMorph = 1 }, .{}, .{});
+    try sse.patchSignals(.{ .mathmlMorph = 1 }, .{});
     return;
 }
 
@@ -33,4 +33,4 @@ for (1..opt.mathmlMorph + 1) |i| {
     try sse.patchElements(mathMLs[r - 1], .{ .namespace = .mathml });
     try http.io.sleep(.fromMilliseconds(delay), .real);
 }
-try sse.patchSignals(.{ .mathmlMorph = 1 }, .{}, .{});
+try sse.patchSignals(.{ .mathmlMorph = 1 }, .{});

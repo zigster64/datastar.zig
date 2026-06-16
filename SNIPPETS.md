@@ -2,6 +2,8 @@
 
 ## Open the Pod Bay Doors Hal
 
+https://data-star.dev/guide/getting_started#patching-elements
+
 ```zig
 const datastar = @import("datastar");
 
@@ -25,6 +27,8 @@ fn openTheDoorsHal(http: *datastar.HTTPRequest) !void {
 
 ## HAL, do you read me ?
 
+https://data-star.dev/guide/reactive_signals#patching-signals
+
 ```zig
 const datastar = @import("datastar");
 
@@ -45,7 +49,21 @@ fn doYouReadMeHAL(http: *datastar.HTTPRequest) !void {
 }
 ```
 
+## Executing script example
+
+https://data-star.dev/guide/datastar_expressions
+
+```zig
+var sse = try http.NewSSE();
+defer sse.close();
+
+try sse.executeScript("alert('This mission is too important for me to allow you to jeopardize it.')", .{});
+
+```
+
 ## Reading Signals Example
+
+https://data-star.dev/guide/backend_requests#reading-signals
 
 ```zig
 const datastar = @import("datastar");
@@ -60,4 +78,37 @@ pub fn handleIncomingRequest(http: *datastar.HTTPRequest) !void {
     const signals = try datastar.readSignals(Signals);
     // ... use signals
 }
+```
+
+## SSE Events
+
+https://data-star.dev/guide/backend_requests#sse-events
+
+```zig
+const datastar = @import("datastar");
+
+var sse = http.NewSSE();
+defer sse.close();
+
+// Patches elements into the DOM.
+try sse.PatchElements(
+    \\<div id="question">What do you put in a toaster?</div>
+    , .{});
+)
+
+// Patches signals.
+try sse.patchSignals(.{
+    .response: "",
+    .answer: "bread"
+}, .{}, .{});
+```
+
+## Backend Actions
+
+https://data-star.dev/guide/backend_requests#backend-actions
+
+```zig
+try sse.PatchElements("<div id='question'>...</div>", .{});
+try sse.PatchElements("<div id='instructions'>...</div>", .{});
+try sse.PatchSignals(.{.answer: " ...", .prize: " ..."}, .{}, .{});
 ```

@@ -519,7 +519,7 @@ const App = struct {
             .radishes = app.crop_counts[1],
             .gourds = app.crop_counts[2],
             .onions = app.crop_counts[3],
-        }, .{}, .{});
+        }, .{});
     }
 
     pub fn updatePlants(app: *App) !void {

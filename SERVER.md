@@ -277,7 +277,7 @@ The SDK provides 2 functions to patch signals over SSE.
 These are all member functions of the SSE type that NewSSE(http) returns.
 
 ```zig
-    pub fn patchSignals(self: *SSE, value: anytype, json_opt: std.json.Stringify.Options, opt: PatchSignalsOptions) !void
+    pub fn patchSignals(self: *SSE, value: anytype, opt: PatchSignalsOptions) !void
 
     pub fn patchSignalsWriter(self: *SSE, opt: PatchSignalsOptions) *std.Io.Writer
 ```
@@ -307,7 +307,7 @@ fn patchSignals(req: *httpz.Request, res: *httpz.Response) !void {
     try sse.patchSignals(.{
         .foo = foo,
         .bar = bar,
-    }, .{}, .{});
+    }, .{});
 }
 ```
 

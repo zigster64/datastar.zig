@@ -175,7 +175,7 @@ fn sseEndpoint(http: *HTTPRequest) !void {
     try sse.patchElements("<div id='hello'>Hello World</div>", .{});
 
     // send a batch of signals for reactive DOM updates
-    try sse.patchSignals(.{ .foo = 42, .bar = "Datastar Rocks" }, .{}, .{});
+    try sse.patchSignals(.{ .foo = 42, .bar = "Datastar Rocks" }, .{});
 
     // invoke scripts directly from the backend
     try sse.executeScriptFmt("alert('All your base are belong to {s}')", .{id}, .{});
@@ -319,7 +319,7 @@ sse.patchElementsFmt(comptime elementsHTML, arguments, elements_options) !void
 sse.patchElementsWriter(elements_options) *std.Io.Writer
 
 // patch signals function variants
-sse.patchSignals(value, json_options, signals_options) !void
+sse.patchSignals(value, signals_options) !void
 sse.patchSignalsWriter(signals_options) *std.Io.Writer
 
 // execute scripts function variants
@@ -675,7 +675,7 @@ The SDK provides 2 functions to patch signals over SSE.
 These are all member functions of the SSE type that NewSSE(http) returns.
 
 ```zig
-    pub fn patchSignals(self: *SSE, value: anytype, json_opt: std.json.Stringify.Options, opt: PatchSignalsOptions) !void
+    pub fn patchSignals(self: *SSE, value: anytype, opt: PatchSignalsOptions) !void
 
     pub fn patchSignalsWriter(self: *SSE, opt: PatchSignalsOptions) *std.Io.Writer
 ```

@@ -22,6 +22,10 @@ Related repos:
 
 Requires Zig **0.16.0** or newer. Tracks the `0.16.0` release.
 
+Breaking Change - sse.patchSignals no longer needs the 'json_options' field, so its simplified to `sse.patchSignals(object, options)`.
+
+The JSON output is always set to minified now.
+
 ## Table of Contents
 
 - [Quick Example](#quick-example)
@@ -70,7 +74,7 @@ fn sseHandler(http: *HTTPRequest) !void {
     var sse = try http.NewSSE();
     defer sse.close();
     try sse.patchElements("<div id='hello'>Hello from the server!</div>", .{});
-    try sse.patchSignals(.{ .count = 42 }, .{}, .{});
+    try sse.patchSignals(.{ .count = 42 }, .{});
 }
 ```
 
@@ -167,7 +171,7 @@ fn sseHandler(http: *HTTPRequest) !void {
     defer sse.close();
 
     try sse.patchElements("<div id='x'>...</div>", .{});
-    try sse.patchSignals(.{ .count = 42 }, .{}, .{});
+    try sse.patchSignals(.{ .count = 42 }, .{});
     try sse.executeScriptFmt("alert('hi {s}')", .{name}, .{});
 }
 ```
