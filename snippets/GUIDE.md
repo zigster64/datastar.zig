@@ -110,5 +110,7 @@ https://data-star.dev/guide/backend_requests#backend-actions
 ```zig
 try sse.PatchElements("<div id='question'>...</div>", .{});
 try sse.PatchElements("<div id='instructions'>...</div>", .{});
-try sse.PatchSignals(.{.answer: " ...", .prize: " ..."}, .{}, .{});
+try sse.PatchSignals(.{.answer: " ...", .prize: " ..."}, .{});
 ```
+
+
