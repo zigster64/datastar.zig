@@ -31,6 +31,9 @@ watch: bool = false,
 fd_limit: ?FDLimit = null,
 read_buffer_size: usize = 4 * 1024,
 write_buffer_size: usize = 4 * 1024,
+kernel_backlog: u31 = Io.net.default_kernel_backlog,
+/// Disable Nagle on accepted sockets (see Config.tcp_nodelay).
+tcp_nodelay: bool = true,
 
 group: Io.Group = .init,
 
@@ -43,11 +46,19 @@ pub const Config = struct {
     allocator: ?Allocator = null,
     watch: bool = false,
     fd_limit: ?FDLimit = null,
-    // Per-connection read/write buffers. Defaults of 4 KB keep the server lean
-    // for low/mid traffic. Bump these when responses are reliably much larger
-    // than 4 KB — fewer underlying writev/readv syscalls per request.
+    // Per-connection HTTP read/write buffers (Datastar-owned, not Io).
+    // Defaults stay lean (4 KiB). For ~8-11 KiB framed SSE morphs, 16 KiB
+    // often fits the response in one write drain; measure before bumping —
+    // 64 KiB has been observed to regress larger (~40 KiB+) morphs.
     read_buffer_size: usize = 4 * 1024,
     write_buffer_size: usize = 4 * 1024,
+    /// Forwarded to `Io.net.ListenOptions.kernel_backlog` (Io default: 128).
+    /// Raise under high accept fan-in (e.g. wrk -c400 cold bursts).
+    kernel_backlog: u31 = Io.net.default_kernel_backlog,
+    /// Set TCP_NODELAY on each accepted socket. Default true — without it,
+    /// small request/response pairs stall ~40ms on Nagle + delayed ACK
+    /// (Go/Kestrel enable this by default). Set false only if you need Nagle.
+    tcp_nodelay: bool = true,
 };
 
 // FD limit configuration
@@ -76,7 +87,10 @@ pub fn init(process_init: std.process.Init, config: Config) !*Server {
 
     self.* = .{
         .process_init = process_init,
-        .server = try address.listen(io, .{ .reuse_address = true }),
+        .server = try address.listen(io, .{
+            .reuse_address = true,
+            .kernel_backlog = config.kernel_backlog,
+        }),
         .router = undefined,
         .log = config.log,
         .io = io,
@@ -86,6 +100,8 @@ pub fn init(process_init: std.process.Init, config: Config) !*Server {
         .fd_limit = config.fd_limit,
         .read_buffer_size = config.read_buffer_size,
         .write_buffer_size = config.write_buffer_size,
+        .kernel_backlog = config.kernel_backlog,
+        .tcp_nodelay = config.tcp_nodelay,
     };
     errdefer self.arena.deinit();
     self.router = try Router.init(self.arena.allocator());
@@ -145,6 +161,13 @@ fn nonBlocking(conn: Io.net.Stream) !void {
 fn handleConnection(self: *Server, conn: Io.net.Stream) Io.Cancelable!void {
     defer conn.close(self.io);
 
+    if (self.tcp_nodelay) {
+        // Avoid Nagle + delayed-ACK ~40ms stalls on small request/response pairs.
+        // Large payloads hide this; small SSE morphs do not.
+        const one: c_int = 1;
+        posix.setsockopt(conn.socket.handle, posix.IPPROTO.TCP, posix.TCP.NODELAY, std.mem.asBytes(&one)) catch {};
+    }
+
     // Outer arena lives for the whole connection. Holds the connection-scoped
     // read/write buffers (sized by config) so we can have runtime-configurable
     // sizes without a stack array of runtime length.
@@ -177,7 +200,11 @@ fn handleConnection(self: *Server, conn: Io.net.Stream) Io.Cancelable!void {
             .params = .{},
             .path = handler_arena.allocator().dupe(u8, request.head.target) catch return error.Canceled,
             .method = request.head.method,
-            .timer = .now(self.io, std.Io.Clock.real),
+            // Only pay for a clock read when request logging will use it.
+            .timer = if (self.log.level != .none and self.log.format != .none)
+                .now(self.io, std.Io.Clock.real)
+            else
+                undefined,
             .log = self.log,
         };
 
@@ -436,4 +463,12 @@ test "urlDecode handles mixed encoding" {
 
     const decoded = try datastar.urlDecode(arena.allocator(), "foo+bar%3Dbaz");
     try std.testing.expectEqualStrings("foo bar=baz", decoded);
+}
+
+test "Config defaults keep lean buffers and enable tcp_nodelay" {
+    const cfg = Config{};
+    try std.testing.expectEqual(@as(usize, 4 * 1024), cfg.read_buffer_size);
+    try std.testing.expectEqual(@as(usize, 4 * 1024), cfg.write_buffer_size);
+    try std.testing.expectEqual(Io.net.default_kernel_backlog, cfg.kernel_backlog);
+    try std.testing.expect(cfg.tcp_nodelay);
 }

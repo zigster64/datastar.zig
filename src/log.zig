@@ -27,6 +27,11 @@ slow_ms: u64 = 200, // 200ms
 fast_us: u64 = 20, // 20us
 
 pub fn info(log: Log, http: *HTTPRequest) void {
+    // format=.none is a mute switch. Historically only level=.none skipped
+    // logging in the router while format=.none still ran this path (clocks +
+    // std.log.info) every request — a ~3× throughput cliff on the bench.
+    if (log.format == .none) return;
+
     const elapsed_ns: i96 = http.timer.untilNow(http.io, std.Io.Clock.real).toNanoseconds();
     const c = log.theme.get();
     const payload_size: []const u8 = switch (http.method) {
@@ -65,13 +70,15 @@ pub fn debug(_: Log, comptime fmt: []const u8, args: anytype) void {
 }
 
 pub fn payload(self: Log, http: *HTTPRequest) void {
+    if (self.format == .none) return;
     if (http.req_payload) |p| {
         const c = self.theme.get();
         self.debug(" {t} >\n{s}{s}{s}", .{ http.method, c.debugColor(), p, c.reset });
     }
 }
 
-pub fn signals(_: Log, http: *HTTPRequest) void {
+pub fn signals(self: Log, http: *HTTPRequest) void {
+    if (self.format == .none) return;
     if (http.query()) |query_params| {
         if (http.method == .GET and query_params.len > 0) {
             const buf: []u8 = "";
@@ -126,4 +133,18 @@ pub fn formatTimeAlloc(http: *HTTPRequest) []u8 {
         sec,
         micros,
     }) catch "";
+}
+
+test "format=.none mutes info payload and signals without touching timer" {
+    // format=.none must return before reading http.timer / http.io — otherwise
+    // muted benches still pay a clock syscall every request.
+    var req: HTTPRequest = undefined;
+    req.method = .GET;
+    req.path = "/";
+    req.req_payload = "secret";
+    // Intentionally leave timer/io/arena undefined; mute must not touch them.
+    const log: Log = .{ .format = .none, .level = .all };
+    log.info(&req);
+    log.payload(&req);
+    log.signals(&req);
 }
