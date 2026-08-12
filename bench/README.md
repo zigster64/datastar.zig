@@ -41,6 +41,31 @@ https://github.com/zigster64/datastar.http.zig/tree/main/bench
 
 Use `wrk -t12 -c400 -d10s http://localhost:8090/sse` to get some bench numbers
 
+All figures below are on a lightweight Mac M2 Pro with 16GB RAM. Will add some extra rows later for Ryzen 9900x on Linux + io-uring
+
+| Language | Test Case | Requests/sec | Latency (Avg) | Latency (Stddev) | Latency (Max) | Transfer/sec |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Zig 0.16 std (Debug)** | Plain HTML                    | 31,797     | 5.63ms       | 3.05ms       | 94.37ms        | **4.50 GB** |
+| **Zig 0.16 std (Debug)** | **Datastar SSE** 100k payload | **27,453** | **5.57ms**  | **4.28ms**  | **74.16ms**   | 4.76 GB    |
+| **Zig 0.16 std (Debug)** | SSE % performance             |            |              |              |                | 86 %        |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Zig 0.16 std (Fast)** | Plain HTML                    | 31,409     | 5.00ms       | 2.81ms       | 57.41ms        | **4.45 GB** |
+| **Zig 0.16 std (Fast)** | **Datastar SSE** 100k payload | **14,481** | **15.27ms**  | **25.20ms**  | **516.95ms**   | 2.51 GB    |
+| **Zig 0.16 std (Fast)** | SSE % performance             |            |              |              |                | 46 %        |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Zig 0.16 zio (Debug)** | Plain HTML                    | 32,376     | 5.68ms       | 2.68ms       | 56.07ms        | **4.58 GB** |
+| **Zig 0.16 zio (Debug)** | **Datastar SSE** 100k payload | **13,706** | **17.36ms**  | **0.91ms**   | **37.32ms**    | 2.38 GB    |
+| **Zig 0.16 zio (Debug)** | SSE % performance             |            |              |              |                | 42 %        |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Zig 0.16 zio (Fast)** | Plain HTML                    | 32,462     | 5.67ms       | 3.41ms       | 144.96ms       | **4.59 GB** |
+| **Zig 0.16 zio (Fast)** | **Datastar SSE** 100k payload | **27,299** | **7.55ms**  | **8.68ms**  | **141.15ms**   | 4.73 GB    |
+| **Zig 0.16 zio (Fast)** | Plain HTML 1k                 | 92,261     | 2.57ms       | 144.65µs     | 11.95ms        | 114.65 MB  |
+| **Zig 0.16 zio (Fast)** | **Datastar SSE** 1k payload   | **90,979** | **2.61ms**  | **127.50µs** | **9.96ms**     | 156.52 MB  |
+| **Zig 0.16 zio (Fast)** | SSE % performance (100k)      |            |              |              |                | 84 %        |
+| **Zig 0.16 zio (Fast)** | SSE % performance (1k)        |            |              |              |                | 99 %        |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+
+With the previous release - before the optimizations, got these figures
 
 | Language | Test Case | Requests/sec | Latency (Avg) | Latency (Stddev) | Latency (Max) | Transfer/sec | Binary/RAM Size |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |

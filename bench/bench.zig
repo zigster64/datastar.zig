@@ -40,8 +40,10 @@ pub fn main(init: std.process.Init) !void {
     {
         const r = server.router;
         r.get("/", handler);
+        r.get("/1k", handler1k);
         r.get("/log", handlerLogged);
         r.get("/sse", sseHandler);
+        r.get("/sse1k", sseHandler1k);
     }
 
     std.debug.print("Zig Datastar 0.16-dev SSE Server running at http://localhost:8090\n", .{});
@@ -50,6 +52,10 @@ pub fn main(init: std.process.Init) !void {
 
 pub fn handler(http: *HTTPRequest) !void {
     return http.html(@embedFile("index.html"));
+}
+
+pub fn handler1k(http: *HTTPRequest) !void {
+    return http.html(@embedFile("index1k.html"));
 }
 
 pub fn handlerLogged(http: *HTTPRequest) !void {
@@ -65,4 +71,11 @@ pub fn sseHandler(http: *HTTPRequest) !void {
     defer sse.close();
 
     try sse.patchElements(@embedFile("index.html"), .{});
+}
+
+pub fn sseHandler1k(http: *HTTPRequest) !void {
+    var sse = try http.NewSSE();
+    defer sse.close();
+
+    try sse.patchElements(@embedFile("index1k.html"), .{});
 }
