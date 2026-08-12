@@ -119,7 +119,7 @@ fn index(req: *dusty.Request, res: *dusty.Response) !void {
     res.content_type = .html;
     res.body = try std.fmt.allocPrint(
         req.arena,
-        @embedFile("01_index.html"),
+        @embedFile("01_index_dusty.html"),
         .{
             .hotreload_id = hotreload_id,
             .web_server = "Dusty Web Server",

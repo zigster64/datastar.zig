@@ -138,7 +138,7 @@ fn index(_: *httpz.Request, res: *httpz.Response) !void {
     res.content_type = .HTML;
     res.body = try std.fmt.allocPrint(
         res.arena,
-        @embedFile("01_index.html"),
+        @embedFile("01_index_httpz.html"),
         .{
             .hotreload_id = hotreload_id,
             .web_server = "http.zig Web Server",

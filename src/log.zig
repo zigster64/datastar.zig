@@ -95,6 +95,28 @@ pub fn signals(self: Log, http: *HTTPRequest) void {
     }
 }
 
+/// Post-handler logging — called by the dispatch loop after the handler
+/// completes. Logs the request line, timing, and optional payload/signals
+/// based on the configured log level.
+pub fn logRequest(http: *HTTPRequest) void {
+    const log = http.log;
+    switch (log.level) {
+        .none => {},
+        else => {
+            log.info(http);
+            switch (log.level) {
+                .payload => log.payload(http),
+                .signals => log.signals(http),
+                .all => {
+                    log.signals(http);
+                    log.payload(http);
+                },
+                else => {},
+            }
+        },
+    }
+}
+
 pub fn err(_: Log, http: *HTTPRequest, error_value: anyerror, status: std.http.Status) void {
     std.log.err("{} {t} - {t} {s}", .{ error_value, status, http.method, http.path });
 }
