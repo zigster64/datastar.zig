@@ -28,6 +28,7 @@ pub fn main(init: std.process.Init) !void {
         .io = io,
         .allocator = std.heap.smp_allocator,
         .log = .{
+            .level = .none,
             .format = .terminal,
             .theme = .monochrom,
         },
