@@ -157,7 +157,12 @@ pub const SSEOptions = struct {
 };
 
 pub const SSE = struct {
-    stream: *std.http.BodyWriter,
+    /// Streaming body writer for sync/long-lived SSE. Null for one-shot
+    /// responses, which defer to `req.respond` with Content-Length on close().
+    stream: ?*std.http.BodyWriter = null,
+    /// Set for one-shot SSE so close() can emit a single Content-Length response.
+    req: ?*std.http.Server.Request = null,
+    headers: []const std.http.Header = &.{},
     output_buffer: Io.Writer.Allocating,
     msg: ?Message = null,
     buffer_size: usize = DEFAULT_BUFFER_SIZE,
@@ -173,29 +178,41 @@ pub const SSE = struct {
 
     pub fn flush(self: *SSE) !void {
         if (self.msg) |*msg| try msg.end();
+        const stream = self.stream orelse {
+            // One-shot: keep framed bytes in output_buffer for close() → respond().
+            return;
+        };
         const data = self.output_buffer.written();
 
         // write to the bodyWriter, on flush this gets chunked and forwarded to the final_output
-        try self.stream.writer.writeAll(data);
+        try stream.writer.writeAll(data);
 
         if (self.sync) {
             // in sync mode, we need to manually trip the end-of-chunk by adding \r\n
             // then tell the BodyWriter to flush itself to the underlying socket connection
-            try self.stream.writer.writeAll("\r\n");
-            try self.stream.writer.flush();
-            try self.stream.flush(); // flushing the BodyWriter does the work of writing to the http_protocol_output
+            try stream.writer.writeAll("\r\n");
+            try stream.writer.flush();
+            try stream.flush(); // flushing the BodyWriter does the work of writing to the http_protocol_output
             _ = self.output_buffer.writer.consume(data.len + 2);
             return;
         }
         _ = self.output_buffer.writer.consume(data.len);
     }
 
-    /// close() is used for short lived SSE only
-    /// on close(), this will populate the response body the call res.write()
-    /// which will output both the header and the body using async IO
+    /// close() finishes a short-lived SSE.
+    /// One-shot (non-sync): single `respond` with Content-Length — no chunked
+    /// framing, no second body buffer copy onto a BodyWriter.
+    /// Sync/streaming: flush remaining buffer and end the chunked stream.
     pub fn close(self: *SSE) void {
-        self.stream.writer.writeAll(self.body()) catch {};
-        self.stream.end() catch {};
+        if (self.stream) |stream| {
+            stream.writer.writeAll(self.body()) catch {};
+            stream.end() catch {};
+            return;
+        }
+        const req = self.req orelse return;
+        self.flush() catch {};
+        const data = self.output_buffer.written();
+        req.respond(data, .{ .extra_headers = self.headers }) catch {};
     }
 
     // Sends a keepalive packet on a connected SSE
@@ -348,6 +365,7 @@ pub fn readSignals(comptime T: type, arena: std.mem.Allocator, req: *std.http.Se
     }
 }
 
+
 pub const Message = struct {
     out_buffer: *Io.Writer = undefined, // an intermediate buffer to write the expanded Datastar event stream to
     input_buffer: [8 * 1024]u8 = undefined,
@@ -497,7 +515,6 @@ pub const Message = struct {
 
     fn drain(w: *Io.Writer, data: []const []const u8, splat: usize) Io.Writer.Error!usize {
         var self: *Message = @fieldParentPtr("interface", w);
-        _ = splat;
 
         if (!self.started) {
             try self.header();
@@ -508,9 +525,18 @@ pub const Message = struct {
         if (w.end > 0) {
             written += try writeBytesScan(self, self.out_buffer, w.buffered());
         }
-        written += try writeBytesScan(self, self.out_buffer, data[0]);
+        if (data.len == 0) return w.consume(written);
 
-        // TODO - we have the expanded contents in self.out_buffer here - debug that, then send the whole contents of the out_buffer to the self.stream_writer
+        // Honor the Writer vector contract: every slice, then splat of the last.
+        for (data[0 .. data.len - 1]) |chunk| {
+            written += try writeBytesScan(self, self.out_buffer, chunk);
+        }
+        const last = data[data.len - 1];
+        var s: usize = 0;
+        while (s < splat) : (s += 1) {
+            written += try writeBytesScan(self, self.out_buffer, last);
+        }
+
         return w.consume(written);
     }
 
@@ -807,4 +833,30 @@ test "PatchElementsOptions with custom values" {
     try std.testing.expectEqualStrings("evt-123", opts.event_id.?);
     try std.testing.expectEqual(5000, opts.retry_duration.?);
     try std.testing.expectEqual(NameSpace.svg, opts.namespace);
+}
+
+test "Message.drain honours write vector and splat" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var buf: Io.Writer.Allocating = .init(arena);
+    var msg: Message = .{};
+    msg.init(.patchElements, PatchElementsOptions{}, &buf.writer);
+    try msg.header();
+
+    // Two distinct slices + splat of the last: exercises the full drain loop
+    // (pre-fix drain only wrote data[0] and ignored splat).
+    var parts = [_][]const u8{ "A\n", "B" };
+    try msg.interface.writeSplatAll(parts[0..], 3);
+    try msg.end();
+
+    const out = buf.written();
+    try std.testing.expectEqualStrings(
+        \\event: datastar-patch-elements
+        \\data: elements A
+        \\data: elements BBB
+        \\
+        \\
+    , out);
 }

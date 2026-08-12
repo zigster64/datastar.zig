@@ -206,21 +206,19 @@ pub fn dispatch(self: *Router, http: *HTTPRequest) !void {
     }
 
     // TODO - remove this after its done in logging middleware instead
-    switch (log.level) {
-        .none => {},
-        else => {
-            log.info(http);
+    // format=.none mutes request logging (same as level=.none for the info path).
+    if (log.level != .none and log.format != .none) {
+        log.info(http);
 
-            switch (log.level) {
-                .payload => log.payload(http),
-                .signals => log.signals(http),
-                .all => {
-                    log.signals(http);
-                    log.payload(http);
-                },
-                else => {},
-            }
-        },
+        switch (log.level) {
+            .payload => log.payload(http),
+            .signals => log.signals(http),
+            .all => {
+                log.signals(http);
+                log.payload(http);
+            },
+            else => {},
+        }
     }
     if (!processed) {
         return http.respond("Method Not Allowed", .method_not_allowed);

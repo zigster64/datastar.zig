@@ -55,7 +55,6 @@ pub fn NewSSESync(http: *HTTPRequest) !SSE {
 /// Return a new SSE object with custom options
 pub fn NewSSEOpt(http: *HTTPRequest, opt: SSEOptions) !SSE {
     const buf_size = if (opt.buffer_size != 0) opt.buffer_size else datastar.DEFAULT_BUFFER_SIZE;
-    const buf = try http.arena.alloc(u8, buf_size);
 
     // IF we are text/event-stream AND we have no content-length (chunked encoding)
     // THEN detach the request from the connection - because the browser will never queue
@@ -64,46 +63,77 @@ pub fn NewSSEOpt(http: *HTTPRequest, opt: SSEOptions) !SSE {
         http.detach = true;
     }
 
-    // need to create a BodyWriter on the heap, because we use it after this
-    // because this is on the arena owned by the handleConnection->request ...
-    // that means the handler needs to stay alive for as long we expect to keep
-    // using this bodyWriter. This has implications for pub/sub
-    const res = try http.arena.create(std.http.BodyWriter);
-    var headers: []const std.http.Header = try http.mergeHeaders(&.{
-        .{ .name = "content-type", .value = "text/event-stream; charset=UTF-8" },
-        .{ .name = "cache-control", .value = "no-cache" },
-    });
-    if (opt.extra_headers) |extras| {
-        headers = try http.mergeHeaders(extras);
+    // Always keep the SSE content-type / cache-control headers. Previously
+    // `extra_headers` *replaced* the merge result and dropped them.
+    const headers = try http.buildSseHeaders(opt.extra_headers);
+
+    const allocating_writer = blk: {
+        if (opt.buffer_size == 0) break :blk Io.Writer.Allocating.init(http.arena);
+        break :blk Io.Writer.Allocating.initCapacity(http.arena, buf_size) catch Io.Writer.Allocating.init(http.arena);
+    };
+
+    http.replied = true;
+
+    // One-shot (non-sync): defer the HTTP response until close() so we can emit
+    // Content-Length in a single respond() — avoids chunked framing + a second
+    // BodyWriter buffer for the common Datastar morph path.
+    if (!opt.sync) {
+        return .{
+            .stream = null,
+            .req = http.req,
+            .headers = headers,
+            .output_buffer = allocating_writer,
+            .buffer_size = opt.buffer_size,
+            .sync = false,
+            .io = http.io,
+            .start_time = Io.Clock.real.now(http.io),
+        };
     }
 
+    // Sync / long-lived: start a chunked stream immediately and flush headers.
+    const buf = try http.arena.alloc(u8, buf_size);
+    const res = try http.arena.create(std.http.BodyWriter);
     res.* = try http.req.respondStreaming(
         buf,
         .{ .respond_options = .{ .extra_headers = headers } },
     );
-    const allocating_writer = blk: {
-        if (opt.buffer_size == 0) break :blk Io.Writer.Allocating.init(http.arena);
-        break :blk Io.Writer.Allocating.initCapacity(http.arena, opt.buffer_size) catch Io.Writer.Allocating.init(http.arena);
-    };
-    if (opt.sync) {
-        try res.flush();
-    }
+    try res.flush();
 
-    http.replied = true;
     return .{
         .stream = res,
+        .req = null,
+        .headers = headers,
         .output_buffer = allocating_writer,
         .buffer_size = opt.buffer_size,
-        .sync = opt.sync,
+        .sync = true,
         .io = http.io,
         .start_time = Io.Clock.real.now(http.io),
     };
 }
 
 const default_headers = &[_]std.http.Header{
-    .{ .name = "Connection", .value = "keep-alive" },
+    // Do not force Connection: keep-alive — std.http.Server owns persistence
+    // and must be free to emit connection: close when the client asked for it.
     .{ .name = "X-Powered-By", .value = "datastar.zig" },
 };
+
+const sse_content_headers = [_]std.http.Header{
+    .{ .name = "content-type", .value = "text/event-stream; charset=UTF-8" },
+    .{ .name = "cache-control", .value = "no-cache" },
+};
+
+/// Build the header list for an SSE response: always include content-type /
+/// cache-control, optionally merge caller extras, then fold in defaults via
+/// mergeHeaders. Extracted so the merge-not-replace branch is unit-testable.
+pub fn buildSseHeaders(self: *HTTPRequest, extras: ?[]const std.http.Header) ![]const std.http.Header {
+    if (extras) |extra| {
+        const combined = try self.arena.alloc(std.http.Header, sse_content_headers.len + extra.len);
+        @memcpy(combined[0..sse_content_headers.len], &sse_content_headers);
+        @memcpy(combined[sse_content_headers.len..], extra);
+        return try self.mergeHeaders(combined);
+    }
+    return try self.mergeHeaders(&sse_content_headers);
+}
 
 /// use this to construct extra_headers when creating any response
 /// it will pull in self.extra_headers, and merge them with the new set
@@ -454,19 +484,98 @@ test "mergeHeaders" {
 
     const merged = try req.mergeHeaders(extra);
 
-    // defaults (2) + extra (1) = 3
-    // defaults are Connection and X-Powered-By
-    try std.testing.expectEqual(3, merged.len);
+    // defaults (1: X-Powered-By) + extra (1) = 2 — no forced Connection.
+    try std.testing.expectEqual(2, merged.len);
 
     var found_test_header = false;
+    var found_powered_by = false;
+    var found_connection = false;
 
     for (merged) |h| {
         if (std.mem.eql(u8, h.name, "X-Test") and std.mem.eql(u8, h.value, "True")) {
             found_test_header = true;
         }
+        if (std.mem.eql(u8, h.name, "X-Powered-By")) {
+            found_powered_by = true;
+        }
+        if (std.ascii.eqlIgnoreCase(h.name, "Connection")) {
+            found_connection = true;
+        }
     }
 
     try std.testing.expect(found_test_header);
+    try std.testing.expect(found_powered_by);
+    try std.testing.expect(!found_connection);
+}
+
+test "buildSseHeaders keeps content-type when extras present" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var req = HTTPRequest{
+        .req = undefined,
+        .io = undefined,
+        .arena = arena.allocator(),
+        .params = .{},
+    };
+
+    const headers = try req.buildSseHeaders(&.{
+        .{ .name = "Access-Control-Allow-Origin", .value = "*" },
+    });
+
+    var found_ct = false;
+    var found_cc = false;
+    var found_cors = false;
+    var found_powered_by = false;
+    for (headers) |h| {
+        if (std.ascii.eqlIgnoreCase(h.name, "content-type") and
+            std.mem.indexOf(u8, h.value, "text/event-stream") != null) found_ct = true;
+        if (std.ascii.eqlIgnoreCase(h.name, "cache-control")) found_cc = true;
+        if (std.mem.eql(u8, h.name, "Access-Control-Allow-Origin")) found_cors = true;
+        if (std.mem.eql(u8, h.name, "X-Powered-By")) found_powered_by = true;
+    }
+    try std.testing.expect(found_ct);
+    try std.testing.expect(found_cc);
+    try std.testing.expect(found_cors);
+    try std.testing.expect(found_powered_by);
+}
+
+test "NewSSEOpt one-shot has no stream and keeps sync false" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // One-shot path only stores the request pointer until close(); a placeholder
+    // Request is enough to cover the !sync branch without respondStreaming.
+    var server_req: std.http.Server.Request = undefined;
+    var req = HTTPRequest{
+        .req = &server_req,
+        .io = std.testing.io,
+        .arena = arena.allocator(),
+        .params = .{},
+        .path = "/",
+        .method = .GET,
+    };
+
+    var sse = try NewSSEOpt(&req, .{
+        .extra_headers = &.{
+            .{ .name = "X-Test", .value = "1" },
+        },
+    });
+    defer sse.output_buffer.deinit();
+
+    try std.testing.expect(sse.stream == null);
+    try std.testing.expect(!sse.sync);
+    try std.testing.expect(req.replied);
+    try std.testing.expect(!req.detach);
+
+    var found_ct = false;
+    var found_x = false;
+    for (sse.headers) |h| {
+        if (std.ascii.eqlIgnoreCase(h.name, "content-type")) found_ct = true;
+        if (std.mem.eql(u8, h.name, "X-Test")) found_x = true;
+    }
+    try std.testing.expect(found_ct);
+    try std.testing.expect(found_x);
 }
 
 test "readSignals GET" {
