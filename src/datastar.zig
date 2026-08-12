@@ -93,60 +93,114 @@ pub const DEFAULT_BUFFER_SIZE = 8 * 1024;
 
 // Framework-agnostic transformer functions.
 //
-// Each one takes an arena allocator, a payload, and the relevant options struct,
-// and returns a freshly-allocated string containing the SSE event-stream payload
-// ready to be written verbatim into whatever response body your HTTP framework exposes.
-//
-// The arena owns the returned slice; free it by resetting/freeing the arena.
+// The unsuffixed functions write a framed SSE event to a caller `*Io.Writer`.
+// The `*Alloc` variants return an arena-owned slice for frameworks that need a
+// complete response body.
 
-pub fn patchElements(arena: Allocator, elements: []const u8, opt: PatchElementsOptions) ![]const u8 {
-    var buf: Io.Writer.Allocating = .init(arena);
+const elements_data_prefix = "data: elements ";
+const signals_data_prefix = "data: signals ";
+
+/// Upper bound on the framed SSE size for a patch-elements payload. Used to
+/// pre-size the allocating writer so `patchElementsAlloc` does not
+/// abandon a doubling ladder of intermediate blocks.
+fn patchElementsSseCapacity(elements: []const u8, opt: PatchElementsOptions) usize {
+    // Fixed framing with headroom for optional fields (id/retry/mode/namespace
+    // /view-transition). A no-options single-line patch is only 48 bytes over
+    // the fragment; 256 covers the full options set with room to spare.
+    var cap: usize = 256;
+    if (opt.event_id) |id| cap += id.len;
+    if (opt.selector) |s| cap += s.len;
+    if (opt.view_transition_selector) |s| cap += s.len;
+    // One prefix per line; +1 covers the common no-trailing-newline case
+    // (overestimates by one prefix when the payload ends in '\n' — fine).
+    const lines = std.mem.count(u8, elements, "\n") + 1;
+    cap += elements.len + lines * elements_data_prefix.len;
+    return cap;
+}
+
+fn executeScriptSseCapacity(script: []const u8, opt: ExecuteScriptOptions) usize {
+    var cap: usize = 256; // fixed headers + <script…> / </script> + trailing \n\n
+    if (opt.event_id) |id| cap += id.len;
+    if (opt.attributes) |attribs| {
+        for (attribs.keys(), attribs.values()) |key, value| {
+            cap += key.len + value.len + 4; // space + key + =""
+        }
+    }
+    const lines = std.mem.count(u8, script, "\n") + 1;
+    cap += script.len + lines * elements_data_prefix.len;
+    return cap;
+}
+
+/// Stream a patch-elements SSE event into `writer`.
+pub fn patchElements(writer: *Io.Writer, elements: []const u8, opt: PatchElementsOptions) !void {
     var msg: Message = .{};
-    msg.init(.patchElements, opt, &buf.writer);
+    msg.init(.patchElements, opt, writer);
     try msg.header();
     try msg.interface.writeAll(elements);
     try msg.end();
+}
+
+/// Allocate and return a complete patch-elements SSE event.
+pub fn patchElementsAlloc(arena: Allocator, elements: []const u8, opt: PatchElementsOptions) ![]const u8 {
+    var buf: Io.Writer.Allocating = try .initCapacity(arena, patchElementsSseCapacity(elements, opt));
+    try patchElements(&buf.writer, elements, opt);
     return buf.written();
 }
 
-pub fn patchElementsFmt(arena: Allocator, comptime elements: []const u8, args: anytype, opt: PatchElementsOptions) ![]const u8 {
-    var buf: Io.Writer.Allocating = .init(arena);
+pub fn patchElementsFmt(writer: *Io.Writer, comptime elements: []const u8, args: anytype, opt: PatchElementsOptions) !void {
     var msg: Message = .{};
-    msg.init(.patchElements, opt, &buf.writer);
+    msg.init(.patchElements, opt, writer);
     try msg.header();
     try msg.interface.print(elements, args);
     try msg.end();
+}
+
+pub fn patchElementsFmtAlloc(arena: Allocator, comptime elements: []const u8, args: anytype, opt: PatchElementsOptions) ![]const u8 {
+    var buf: Io.Writer.Allocating = .init(arena);
+    try patchElementsFmt(&buf.writer, elements, args, opt);
     return buf.written();
 }
 
-pub fn patchSignals(arena: Allocator, signals: anytype, opt: PatchSignalsOptions) ![]const u8 {
-    var buf: Io.Writer.Allocating = .init(arena);
+pub fn patchSignals(writer: *Io.Writer, signals: anytype, opt: PatchSignalsOptions) !void {
     var msg: Message = .{};
-    msg.init(.patchSignals, opt, &buf.writer);
+    msg.init(.patchSignals, opt, writer);
     try msg.header();
     const json_formatter = std.json.fmt(signals, .{});
     try json_formatter.format(&msg.interface);
     try msg.end();
+}
+
+pub fn patchSignalsAlloc(arena: Allocator, signals: anytype, opt: PatchSignalsOptions) ![]const u8 {
+    var buf: Io.Writer.Allocating = .init(arena);
+    try patchSignals(&buf.writer, signals, opt);
     return buf.written();
 }
 
-pub fn executeScript(arena: Allocator, script: []const u8, opt: ExecuteScriptOptions) ![]const u8 {
-    var buf: Io.Writer.Allocating = .init(arena);
+pub fn executeScript(writer: *Io.Writer, script: []const u8, opt: ExecuteScriptOptions) !void {
     var msg: Message = .{};
-    msg.init(.executeScript, opt, &buf.writer);
+    msg.init(.executeScript, opt, writer);
     try msg.header();
     try msg.interface.writeAll(script);
     try msg.end();
+}
+
+pub fn executeScriptAlloc(arena: Allocator, script: []const u8, opt: ExecuteScriptOptions) ![]const u8 {
+    var buf: Io.Writer.Allocating = try .initCapacity(arena, executeScriptSseCapacity(script, opt));
+    try executeScript(&buf.writer, script, opt);
     return buf.written();
 }
 
-pub fn executeScriptFmt(arena: Allocator, comptime script: []const u8, args: anytype, opt: ExecuteScriptOptions) ![]const u8 {
-    var buf: Io.Writer.Allocating = .init(arena);
+pub fn executeScriptFmt(writer: *Io.Writer, comptime script: []const u8, args: anytype, opt: ExecuteScriptOptions) !void {
     var msg: Message = .{};
-    msg.init(.executeScript, opt, &buf.writer);
+    msg.init(.executeScript, opt, writer);
     try msg.header();
     try msg.interface.print(script, args);
     try msg.end();
+}
+
+pub fn executeScriptFmtAlloc(arena: Allocator, comptime script: []const u8, args: anytype, opt: ExecuteScriptOptions) ![]const u8 {
+    var buf: Io.Writer.Allocating = .init(arena);
+    try executeScriptFmt(&buf.writer, script, args, opt);
     return buf.written();
 }
 
@@ -517,8 +571,8 @@ pub const Message = struct {
     // implementation of writeBytes using SIMD scan of the input to find newlines
     fn writeBytesScan(self: *Message, stream_writer: *Io.Writer, bytes: []const u8) !usize {
         const prefix = switch (self.command) {
-            .patchElements, .executeScript => "data: elements ",
-            .patchSignals => "data: signals ",
+            .patchElements, .executeScript => elements_data_prefix,
+            .patchSignals => signals_data_prefix,
         };
 
         var rest = bytes;
@@ -694,7 +748,7 @@ test "patchElements transformer emits SSE event stream" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const out = try patchElements(arena, "<div id='hello'>Hi</div>", .{});
+    const out = try patchElementsAlloc(arena, "<div id='hello'>Hi</div>", .{});
     try std.testing.expectEqualStrings(
         "event: datastar-patch-elements\ndata: elements <div id='hello'>Hi</div>\n\n",
         out,
@@ -706,7 +760,7 @@ test "patchElements transformer honours options" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const out = try patchElements(arena, "<p>x</p>", .{
+    const out = try patchElementsAlloc(arena, "<p>x</p>", .{
         .mode = .inner,
         .selector = "#main",
         .view_transition = true,
@@ -724,7 +778,7 @@ test "patchElements transformer prefixes each line of multiline input" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const out = try patchElements(arena, "<div>\n  <p>hi</p>\n</div>", .{});
+    const out = try patchElementsAlloc(arena, "<div>\n  <p>hi</p>\n</div>", .{});
     try std.testing.expectEqualStrings(
         "event: datastar-patch-elements\ndata: elements <div>\ndata: elements   <p>hi</p>\ndata: elements </div>\n\n",
         out,
@@ -736,7 +790,7 @@ test "patchElementsFmt transformer formats payload" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const out = try patchElementsFmt(arena, "<p id='c'>count {d}</p>", .{42}, .{});
+    const out = try patchElementsFmtAlloc(arena, "<p id='c'>count {d}</p>", .{42}, .{});
     try std.testing.expectEqualStrings(
         "event: datastar-patch-elements\ndata: elements <p id='c'>count 42</p>\n\n",
         out,
@@ -748,7 +802,7 @@ test "patchSignals transformer emits JSON payload" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const out = try patchSignals(arena, .{ .foo = 42, .bar = "baz" }, .{});
+    const out = try patchSignalsAlloc(arena, .{ .foo = 42, .bar = "baz" }, .{});
     try std.testing.expectEqualStrings(
         "event: datastar-patch-signals\ndata: signals {\"foo\":42,\"bar\":\"baz\"}\n\n",
         out,
@@ -760,7 +814,7 @@ test "patchSignals transformer honours only_if_missing" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const out = try patchSignals(arena, .{ .x = 1 }, .{ .only_if_missing = true });
+    const out = try patchSignalsAlloc(arena, .{ .x = 1 }, .{ .only_if_missing = true });
     try std.testing.expectEqualStrings(
         "event: datastar-patch-signals\ndata: onlyIfMissing true\ndata: signals {\"x\":1}\n\n",
         out,
@@ -772,7 +826,7 @@ test "executeScript transformer wraps payload in a script tag" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const out = try executeScript(arena, "console.log('hi')", .{});
+    const out = try executeScriptAlloc(arena, "console.log('hi')", .{});
     try std.testing.expectEqualStrings(
         "event: datastar-patch-elements\ndata: mode append\ndata: selector body\ndata: elements <script data-effect=\"el.remove()\">console.log('hi')</script>\n\n",
         out,
@@ -784,11 +838,72 @@ test "executeScriptFmt transformer formats payload" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const out = try executeScriptFmt(arena, "alert('hi {s}')", .{"world"}, .{ .auto_remove = false });
+    const out = try executeScriptFmtAlloc(arena, "alert('hi {s}')", .{"world"}, .{ .auto_remove = false });
     try std.testing.expectEqualStrings(
         "event: datastar-patch-elements\ndata: mode append\ndata: selector body\ndata: elements <script>alert('hi world')</script>\n\n",
         out,
     );
+}
+
+test "patchElements matches patchElementsAlloc" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const html = "<div>\n  <p>hi</p>\n</div>";
+    const opts: PatchElementsOptions = .{ .selector = "#main", .mode = .inner };
+
+    const from_slice = try patchElementsAlloc(arena, html, opts);
+
+    var buf: Io.Writer.Allocating = .init(arena);
+    try patchElements(&buf.writer, html, opts);
+
+    try std.testing.expectEqualStrings(from_slice, buf.written());
+}
+
+test "patchElementsAlloc pre-sizes so an empty arena holds ~1x the framed output" {
+    // Fragment lives outside the arena so we measure only the framing alloc.
+    const fragment = try std.testing.allocator.alloc(u8, 1024 * 1024);
+    defer std.testing.allocator.free(fragment);
+    @memset(fragment, 'x');
+    fragment[0] = '<';
+    fragment[1000] = '\n';
+    fragment[100_000] = '\n';
+    fragment[fragment.len - 1] = '>';
+
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+
+    const before = arena_inst.queryCapacity();
+    const out = try patchElementsAlloc(arena_inst.allocator(), fragment, .{});
+    const after = arena_inst.queryCapacity();
+
+    try std.testing.expect(out.len >= fragment.len);
+    try std.testing.expect(out.len <= fragment.len + 256);
+    const grown = after - before;
+    try std.testing.expect(grown < out.len * 2);
+}
+
+test "patchElements frames without retaining a copy in the caller's arena" {
+    var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    // Fragment already resident in the arena; framing to a writer must not
+    // allocate more arena capacity.
+    const fragment = try arena.alloc(u8, 256 * 1024);
+    @memset(fragment, 'y');
+    fragment[0] = '<';
+    fragment[fragment.len - 1] = '>';
+
+    const before = arena_inst.queryCapacity();
+
+    var sink: [256 * 1024 + 4096]u8 = undefined;
+    var writer = Io.Writer.fixed(sink[0..]);
+    try patchElements(&writer, fragment, .{});
+
+    try std.testing.expectEqual(before, arena_inst.queryCapacity());
+    try std.testing.expect(writer.end > fragment.len);
 }
 
 test "PatchElementsOptions with custom values" {

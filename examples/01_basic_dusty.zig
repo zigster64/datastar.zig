@@ -4,14 +4,15 @@
 // server. All Datastar SSE payloads are built with the framework-agnostic
 // transformer functions:
 //
-//     datastar.patchElements(arena, html, opts)         ![]const u8
-//     datastar.patchElementsFmt(arena, fmt, args, opts) ![]const u8
-//     datastar.patchSignals(arena, value, opts)         ![]const u8
-//     datastar.executeScript(arena, script, opts)       ![]const u8
-//     datastar.executeScriptFmt(arena, fmt, args, opts) ![]const u8
+//     datastar.patchElements(writer, html, opts)              !void
+//     datastar.patchElementsAlloc(arena, html, opts)          ![]const u8
+//     datastar.patchElementsFmtAlloc(arena, fmt, args, opts)  ![]const u8
+//     datastar.patchSignalsAlloc(arena, value, opts)          ![]const u8
+//     datastar.executeScriptAlloc(arena, script, opts)        ![]const u8
+//     datastar.executeScriptFmtAlloc(arena, fmt, args, opts)  ![]const u8
 //
-// Each one returns a full `event: ...\ndata: ...\n\n` block ready to write to
-// any response body or stream as `Content-Type: text/event-stream`.
+// Streaming to a writer is the primary SDK contract. This adapter uses the
+// explicit `*Alloc` conveniences because dusty expects a complete body.
 //
 // Build with:  zig build dusty
 // Run with:    ./zig-out/bin/example_1_dusty
@@ -144,7 +145,7 @@ fn patchElements(req: *dusty.Request, res: *dusty.Response) !void {
     try res.header("X-SSE-More-Headers", "Patch Elements Example");
     try res.header("X-SSE-Even-More-Headers", "All the Headers");
 
-    res.body = try datastar.patchElementsFmt(
+    res.body = try datastar.patchElementsFmtAlloc(
         req.arena,
         \\<p id="mf-patch">This is update number {d}</p>
     ,
@@ -173,13 +174,13 @@ fn patchElementsOpts(req: *dusty.Request, res: *dusty.Response) !void {
 
     try beginSseBatch(res);
     res.body = switch (patch_mode) {
-        .replace => try datastar.patchElements(
+        .replace => try datastar.patchElementsAlloc(
             req.arena,
             \\<p id="mf-patch-opts" class="border-4 border-error">Complete Replacement of the OUTER HTML</p>
         ,
             opts,
         ),
-        else => try datastar.patchElementsFmt(
+        else => try datastar.patchElementsFmtAlloc(
             req.arena,
             \\<p>This is update number {d}</p>
         ,
@@ -191,7 +192,7 @@ fn patchElementsOpts(req: *dusty.Request, res: *dusty.Response) !void {
 
 fn patchElementsOptsReset(req: *dusty.Request, res: *dusty.Response) !void {
     try beginSseBatch(res);
-    res.body = try datastar.patchElements(req.arena, @embedFile("01_index_opts.html"), .{});
+    res.body = try datastar.patchElementsAlloc(req.arena, @embedFile("01_index_opts.html"), .{});
 }
 
 fn jsonSignals(_: *dusty.Request, res: *dusty.Response) !void {
@@ -204,7 +205,7 @@ fn patchSignals(req: *dusty.Request, res: *dusty.Response) !void {
     try beginSseBatch(res);
     const foo = prng.random().intRangeAtMost(u8, 0, 255);
     const bar = prng.random().intRangeAtMost(u8, 0, 255);
-    res.body = try datastar.patchSignals(req.arena, .{ .foo = foo, .bar = bar }, .{});
+    res.body = try datastar.patchSignalsAlloc(req.arena, .{ .foo = foo, .bar = bar }, .{});
 }
 
 fn patchSignalsOnlyIfMissing(req: *dusty.Request, res: *dusty.Response) !void {
@@ -212,12 +213,12 @@ fn patchSignalsOnlyIfMissing(req: *dusty.Request, res: *dusty.Response) !void {
     const foo = prng.random().intRangeAtMost(u8, 1, 100);
     const bar = prng.random().intRangeAtMost(u8, 1, 100);
 
-    const signals_block = try datastar.patchSignals(
+    const signals_block = try datastar.patchSignalsAlloc(
         req.arena,
         .{ .newfoo = foo, .newbar = bar },
         .{ .only_if_missing = true },
     );
-    const script_block = try datastar.executeScript(
+    const script_block = try datastar.executeScriptAlloc(
         req.arena,
         "console.log('Patched newfoo and newbar, but only if missing');",
         .{},
@@ -247,7 +248,7 @@ fn patchSignalsRemove(req: *dusty.Request, res: *dusty.Response) !void {
     );
 
     try beginSseBatch(res);
-    res.body = try datastar.patchSignals(req.arena, parsed, .{});
+    res.body = try datastar.patchSignalsAlloc(req.arena, parsed, .{});
 }
 
 const snippets = [_][]const u8{
@@ -274,12 +275,12 @@ fn executeScript(req: *dusty.Request, res: *dusty.Response) !void {
 
     try beginSseBatch(res);
     res.body = switch (sample) {
-        1 => try datastar.executeScript(
+        1 => try datastar.executeScriptAlloc(
             req.arena,
             "console.log('Running from executeScript() directly');",
             .{},
         ),
-        2 => try datastar.executeScript(
+        2 => try datastar.executeScriptAlloc(
             req.arena,
             \\console.log('Multiline Script, using executeScript with a built-up payload');
             \\parent = document.querySelector('#execute-script-page');
@@ -287,13 +288,13 @@ fn executeScript(req: *dusty.Request, res: *dusty.Response) !void {
         ,
             .{ .attributes = attribs },
         ),
-        3 => try datastar.executeScriptFmt(
+        3 => try datastar.executeScriptFmtAlloc(
             req.arena,
             "console.log('Using formatted print {d}');",
             .{sample},
             .{},
         ),
-        else => try datastar.executeScriptFmt(
+        else => try datastar.executeScriptFmtAlloc(
             req.arena,
             "console.log('Unknown SampleID {d}');",
             .{sample},
@@ -367,7 +368,7 @@ fn emitSvgFrame(
     args: anytype,
 ) !void {
     fba.reset();
-    const block = try datastar.patchElementsFmt(fba.allocator(), fmt, args, .{ .namespace = .svg });
+    const block = try datastar.patchElementsFmtAlloc(fba.allocator(), fmt, args, .{ .namespace = .svg });
     try writeBlock(conn, block);
 }
 
@@ -390,14 +391,14 @@ fn mathMorph(req: *dusty.Request, res: *dusty.Response) !void {
 
     if (opt.mathmlMorph == 1) {
         try beginSseBatch(res);
-        const a = try datastar.patchElementsFmt(
+        const a = try datastar.patchElementsFmtAlloc(
             req.arena,
             \\<mn id="math-factor" class="text-red-500 font-bold">{}</mn>
         ,
             .{prng.random().intRangeAtMost(u16, 2, 22)},
             .{ .namespace = .mathml, .view_transition = true },
         );
-        const b = try datastar.patchSignals(req.arena, .{ .mathmlMorph = 1 }, .{});
+        const b = try datastar.patchSignalsAlloc(req.arena, .{ .mathmlMorph = 1 }, .{});
         res.body = try std.mem.concat(req.arena, u8, &.{ a, b });
         return;
     }
@@ -416,7 +417,7 @@ fn mathMorph(req: *dusty.Request, res: *dusty.Response) !void {
     for (0..opt.mathmlMorph) |_| {
         fba.reset();
         const r = prng.random().intRangeAtMost(u8, 1, mathMLs.len);
-        const block = try datastar.patchElements(
+        const block = try datastar.patchElementsAlloc(
             fba.allocator(),
             mathMLs[r - 1],
             .{ .namespace = .mathml },
@@ -426,7 +427,7 @@ fn mathMorph(req: *dusty.Request, res: *dusty.Response) !void {
     }
 
     fba.reset();
-    const reset_block = try datastar.patchSignals(fba.allocator(), .{ .mathmlMorph = 1 }, .{});
+    const reset_block = try datastar.patchSignalsAlloc(fba.allocator(), .{ .mathmlMorph = 1 }, .{});
     try writeBlock(stream.conn, reset_block);
 }
 
@@ -460,7 +461,7 @@ fn code(req: *dusty.Request, res: *dusty.Response) !void {
     const selector = try std.fmt.allocPrint(req.arena, "#code-{}", .{snip});
 
     try beginSseBatch(res);
-    res.body = try datastar.patchElements(
+    res.body = try datastar.patchElementsAlloc(
         req.arena,
         html.written(),
         .{ .selector = selector, .mode = .append },
@@ -495,7 +496,7 @@ fn hotreload(req: *dusty.Request, res: *dusty.Response) !void {
 
     if (id != hotreload_id) {
         std.log.warn("Client is stale {} != {} - reload them", .{ id, hotreload_id });
-        const block = try datastar.executeScript(fba.allocator(), "window.location.reload()", .{});
+        const block = try datastar.executeScriptAlloc(fba.allocator(), "window.location.reload()", .{});
         try writeBlock(stream.conn, block);
         return;
     }
@@ -515,7 +516,7 @@ fn hotreload(req: *dusty.Request, res: *dusty.Response) !void {
         ,
             .{seconds},
         );
-        const block = try datastar.patchElements(fba.allocator(), ping, .{});
+        const block = try datastar.patchElementsAlloc(fba.allocator(), ping, .{});
         try writeBlock(stream.conn, block);
     }
 }
