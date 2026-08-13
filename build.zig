@@ -192,4 +192,19 @@ pub fn build(b: *std.Build) void {
     dusty_check.root_module.addImport("datastar", datastar_module);
     dusty_check.root_module.addImport("dusty", dusty.module("dusty"));
     check.dependOn(&dusty_check.step);
+
+    // Peak-RSS / allocation analysis for the streaming patchElements change.
+    // ReleaseFast so DebugAllocator metadata does not dominate the RSS signal.
+    const peak_rss = b.addExecutable(.{
+        .name = "peak-rss",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/peak_rss.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    peak_rss.root_module.addImport("datastar", datastar_module);
+    const peak_rss_step = b.step("peak-rss", "Measure patchElements peak RSS / allocation (ladder vs alloc vs stream)");
+    const run_peak_rss = b.addRunArtifact(peak_rss);
+    peak_rss_step.dependOn(&run_peak_rss.step);
 }

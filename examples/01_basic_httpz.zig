@@ -4,15 +4,15 @@
 // datastar.HTTPServer has been swapped out for httpz. SSE payloads are now built
 // with the framework-agnostic transformer functions:
 //
-//     datastar.patchElements(arena, html, opts)         ![]const u8
-//     datastar.patchElementsFmt(arena, fmt, args, opts) ![]const u8
-//     datastar.patchSignals(arena, value, opts)         ![]const u8
-//     datastar.executeScript(arena, script, opts)       ![]const u8
-//     datastar.executeScriptFmt(arena, fmt, args, opts) ![]const u8
+//     datastar.patchElements(writer, html, opts)              !void
+//     datastar.patchElementsAlloc(arena, html, opts)          ![]const u8
+//     datastar.patchElementsFmtAlloc(arena, fmt, args, opts)  ![]const u8
+//     datastar.patchSignalsAlloc(arena, value, opts)          ![]const u8
+//     datastar.executeScriptAlloc(arena, script, opts)        ![]const u8
+//     datastar.executeScriptFmtAlloc(arena, fmt, args, opts)  ![]const u8
 //
-// The string each one returns is a complete `event: ...\ndata: ...\n\n` block;
-// concatenate as many as you want and ship them as the response body with
-// Content-Type: text/event-stream.
+// Streaming to a writer is the primary SDK contract. This adapter uses the
+// explicit `*Alloc` conveniences because http.zig expects a complete body.
 //
 // Build with:  zig build http.zig
 // Run with:    ./zig-out/bin/example_1_httpz
@@ -163,7 +163,7 @@ fn patchElements(_: *httpz.Request, res: *httpz.Response) !void {
     res.header("X-SSE-More-Headers", "Patch Elements Example");
     res.header("X-SSE-Even-More-Headers", "All the Headers");
 
-    res.body = try datastar.patchElementsFmt(
+    res.body = try datastar.patchElementsFmtAlloc(
         res.arena,
         \\<p id="mf-patch">This is update number {d}</p>
     ,
@@ -192,13 +192,13 @@ fn patchElementsOpts(req: *httpz.Request, res: *httpz.Response) !void {
 
     beginSse(res);
     res.body = switch (patch_mode) {
-        .replace => try datastar.patchElements(
+        .replace => try datastar.patchElementsAlloc(
             res.arena,
             \\<p id="mf-patch-opts" class="border-4 border-error">Complete Replacement of the OUTER HTML</p>
         ,
             opts,
         ),
-        else => try datastar.patchElementsFmt(
+        else => try datastar.patchElementsFmtAlloc(
             res.arena,
             \\<p>This is update number {d}</p>
         ,
@@ -210,7 +210,7 @@ fn patchElementsOpts(req: *httpz.Request, res: *httpz.Response) !void {
 
 fn patchElementsOptsReset(_: *httpz.Request, res: *httpz.Response) !void {
     beginSse(res);
-    res.body = try datastar.patchElements(res.arena, @embedFile("01_index_opts.html"), .{});
+    res.body = try datastar.patchElementsAlloc(res.arena, @embedFile("01_index_opts.html"), .{});
 }
 
 // Plain JSON response — Datastar can pick up signals from a regular JSON body.
@@ -224,7 +224,7 @@ fn patchSignals(_: *httpz.Request, res: *httpz.Response) !void {
     beginSse(res);
     const foo = prng.random().intRangeAtMost(u8, 0, 255);
     const bar = prng.random().intRangeAtMost(u8, 0, 255);
-    res.body = try datastar.patchSignals(res.arena, .{ .foo = foo, .bar = bar }, .{});
+    res.body = try datastar.patchSignalsAlloc(res.arena, .{ .foo = foo, .bar = bar }, .{});
 }
 
 // Two SSE blocks in one response — just concatenate.
@@ -233,12 +233,12 @@ fn patchSignalsOnlyIfMissing(_: *httpz.Request, res: *httpz.Response) !void {
     const foo = prng.random().intRangeAtMost(u8, 1, 100);
     const bar = prng.random().intRangeAtMost(u8, 1, 100);
 
-    const signals_block = try datastar.patchSignals(
+    const signals_block = try datastar.patchSignalsAlloc(
         res.arena,
         .{ .newfoo = foo, .newbar = bar },
         .{ .only_if_missing = true },
     );
-    const script_block = try datastar.executeScript(
+    const script_block = try datastar.executeScriptAlloc(
         res.arena,
         "console.log('Patched newfoo and newbar, but only if missing');",
         .{},
@@ -270,7 +270,7 @@ fn patchSignalsRemove(req: *httpz.Request, res: *httpz.Response) !void {
     );
 
     beginSse(res);
-    res.body = try datastar.patchSignals(res.arena, parsed, .{});
+    res.body = try datastar.patchSignalsAlloc(res.arena, parsed, .{});
 }
 
 const snippets = [_][]const u8{
@@ -297,12 +297,12 @@ fn executeScript(req: *httpz.Request, res: *httpz.Response) !void {
 
     beginSse(res);
     res.body = switch (sample) {
-        1 => try datastar.executeScript(
+        1 => try datastar.executeScriptAlloc(
             res.arena,
             "console.log('Running from executeScript() directly');",
             .{},
         ),
-        2 => try datastar.executeScript(
+        2 => try datastar.executeScriptAlloc(
             res.arena,
             \\console.log('Multiline Script, using executeScript with a built-up payload');
             \\parent = document.querySelector('#execute-script-page');
@@ -310,13 +310,13 @@ fn executeScript(req: *httpz.Request, res: *httpz.Response) !void {
         ,
             .{ .attributes = attribs },
         ),
-        3 => try datastar.executeScriptFmt(
+        3 => try datastar.executeScriptFmtAlloc(
             res.arena,
             "console.log('Using formatted print {d}');",
             .{sample},
             .{},
         ),
-        else => try datastar.executeScriptFmt(
+        else => try datastar.executeScriptFmtAlloc(
             res.arena,
             "console.log('Unknown SampleID {d}');",
             .{sample},
@@ -386,7 +386,7 @@ fn emitSvgFrame(
     args: anytype,
 ) !void {
     fba.reset();
-    const block = try datastar.patchElementsFmt(fba.allocator(), fmt, args, .{ .namespace = .svg });
+    const block = try datastar.patchElementsFmtAlloc(fba.allocator(), fmt, args, .{ .namespace = .svg });
     try streamWriteAll(stream, shared_io, block);
 }
 
@@ -410,14 +410,14 @@ fn mathMorph(req: *httpz.Request, res: *httpz.Response) !void {
     if (opt.mathmlMorph == 1) {
         // Quick-fire single update — no streaming needed.
         beginSse(res);
-        const a = try datastar.patchElementsFmt(
+        const a = try datastar.patchElementsFmtAlloc(
             res.arena,
             \\<mn id="math-factor" class="text-red-500 font-bold">{}</mn>
         ,
             .{prng.random().intRangeAtMost(u16, 2, 22)},
             .{ .namespace = .mathml, .view_transition = true },
         );
-        const b = try datastar.patchSignals(res.arena, .{ .mathmlMorph = 1 }, .{});
+        const b = try datastar.patchSignalsAlloc(res.arena, .{ .mathmlMorph = 1 }, .{});
         res.body = try std.mem.concat(res.arena, u8, &.{ a, b });
         return;
     }
@@ -438,7 +438,7 @@ fn mathMorph(req: *httpz.Request, res: *httpz.Response) !void {
     for (0..opt.mathmlMorph) |_| {
         fba.reset();
         const r = prng.random().intRangeAtMost(u8, 1, mathMLs.len);
-        const block = try datastar.patchElements(
+        const block = try datastar.patchElementsAlloc(
             fba.allocator(),
             mathMLs[r - 1],
             .{ .namespace = .mathml },
@@ -448,7 +448,7 @@ fn mathMorph(req: *httpz.Request, res: *httpz.Response) !void {
     }
 
     fba.reset();
-    const reset_block = try datastar.patchSignals(fba.allocator(), .{ .mathmlMorph = 1 }, .{});
+    const reset_block = try datastar.patchSignalsAlloc(fba.allocator(), .{ .mathmlMorph = 1 }, .{});
     try streamWriteAll(stream, shared_io, reset_block);
 }
 
@@ -483,7 +483,7 @@ fn code(req: *httpz.Request, res: *httpz.Response) !void {
     const selector = try std.fmt.allocPrint(res.arena, "#code-{}", .{snip});
 
     beginSse(res);
-    res.body = try datastar.patchElements(
+    res.body = try datastar.patchElementsAlloc(
         res.arena,
         html.written(),
         .{ .selector = selector, .mode = .append },
@@ -521,7 +521,7 @@ fn hotreload(req: *httpz.Request, res: *httpz.Response) !void {
 
     if (id != hotreload_id) {
         std.log.warn("Client is stale {} != {} - reload them", .{ id, hotreload_id });
-        const block = try datastar.executeScript(fba.allocator(), "window.location.reload()", .{});
+        const block = try datastar.executeScriptAlloc(fba.allocator(), "window.location.reload()", .{});
         try streamWriteAll(stream, shared_io, block);
         return;
     }
@@ -541,7 +541,7 @@ fn hotreload(req: *httpz.Request, res: *httpz.Response) !void {
         ,
             .{seconds},
         );
-        const block = try datastar.patchElements(fba.allocator(), ping, .{});
+        const block = try datastar.patchElementsAlloc(fba.allocator(), ping, .{});
         try streamWriteAll(stream, shared_io, block);
     }
 }

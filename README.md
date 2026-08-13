@@ -427,19 +427,19 @@ If you've already chosen an HTTP framework — `http.zig`, `dusty`, `zap`, `jetz
 
 > **For SDK-only use, prefer [`datastar-sdk.zig`](https://github.com/zigster64/datastar-sdk.zig)** — same transformer functions packaged as a standalone module, without dragging in the bundled HTTP server or the pubsub dependency. This section is a quick reference; the dedicated repo is what you want to depend on for production SDK-only use.
 
-Each transformer returns a complete `event: ...\ndata: ...\n\n` SSE block — concatenate as many as you want and write them as the response body with `Content-Type: text/event-stream`:
+The primary transformers write a complete `event: ...\ndata: ...\n\n` SSE block directly to a writer. This is the default because SSE is a streaming protocol and it avoids retaining an intermediate copy. Frameworks that require a complete response body can use the explicit `*Alloc` conveniences.
 
 ```zig
 const datastar = @import("datastar");
 
-// Inside any framework's SSE handler, with an arena and a `res` from your framework:
-
-const a = try datastar.patchElements(arena, "<div id='hello'>Hi</div>", .{});
-const b = try datastar.patchSignals(arena, .{ .foo = 42, .bar = "Datastar Rocks" }, .{});
-const c = try datastar.executeScriptFmt(arena, "alert('hello {s}')", .{name}, .{});
-
+// Inside any framework's SSE handler:
 res.header("Content-Type", "text/event-stream");
-res.body = try std.mem.concat(arena, u8, &.{ a, b, c });
+try datastar.patchElements(response_writer, "<div id='hello'>Hi</div>", .{});
+try datastar.patchSignals(response_writer, .{ .foo = 42, .bar = "Datastar Rocks" }, .{});
+try datastar.executeScriptFmt(response_writer, "alert('hello {s}')", .{name}, .{});
+
+// If the framework requires a complete response body:
+res.body = try datastar.patchElementsAlloc(arena, html, .{});
 
 // And to read Datastar signals on the way in:
 const Signals = struct { name: []const u8, count: u32 };
@@ -454,15 +454,20 @@ The full SDK surface:
 datastar.readSignals(comptime T: type, arena: Allocator, req: *std.http.Server.Request) !T
 
 // Patch DOM elements
-datastar.patchElements(arena, html, opts) ![]const u8
-datastar.patchElementsFmt(arena, comptime fmt, args, opts) ![]const u8
+datastar.patchElements(writer, html, opts) !void
+datastar.patchElementsFmt(writer, comptime fmt, args, opts) !void
+datastar.patchElementsAlloc(arena, html, opts) ![]const u8
+datastar.patchElementsFmtAlloc(arena, comptime fmt, args, opts) ![]const u8
 
 // Patch signals (any JSON-serializable value)
-datastar.patchSignals(arena, value, opts) ![]const u8
+datastar.patchSignals(writer, value, opts) !void
+datastar.patchSignalsAlloc(arena, value, opts) ![]const u8
 
 // Execute a script on the client (wraps the script in a <script> tag and patches it into body)
-datastar.executeScript(arena, script, opts) ![]const u8
-datastar.executeScriptFmt(arena, comptime fmt, args, opts) ![]const u8
+datastar.executeScript(writer, script, opts) !void
+datastar.executeScriptFmt(writer, comptime fmt, args, opts) !void
+datastar.executeScriptAlloc(arena, script, opts) ![]const u8
+datastar.executeScriptFmtAlloc(arena, comptime fmt, args, opts) ![]const u8
 
 // Helper — re-exported for framework adapters
 datastar.urlDecode(allocator, input) ![]u8

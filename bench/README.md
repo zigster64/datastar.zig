@@ -135,3 +135,17 @@ I dont know if `wrk` conforms to that, or not either.
 Would have to do some serious instrumenting to find out where the time is spent, but its probably a combination of all of the above.
 
 The fact that its consistent across the board will different languages and SDKs suggests the numbers are pretty correct though.
+
+# Peak RSS / allocation
+
+`zig build peak-rss` (from the repo root) isolates each `(mode × placement × size)` in its own child process and reports:
+
+| column | meaning |
+| --- | --- |
+| `rss_delta` | `ru_maxrss` after framing minus after fragment touch |
+| `req_bytes` | bytes requested through a counting allocator during framing |
+| `arena_cap` | `ArenaAllocator.queryCapacity` growth during framing |
+
+Modes: `ladder` (Allocating from zero in the arena), `alloc` (`patchElementsAlloc`), `stream` (`patchElements` into a discarding writer).
+
+On the measured 4.7 MB in-arena shape, streaming requests **0** framing bytes; the ladder still requests ~12× the fragment.
