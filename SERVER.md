@@ -676,3 +676,60 @@ Please raise a github issue first before adding a PR, and reference the issue in
 
 This allows room for open discussion, as well as tracking of issues opened and closed.
 
+
+## TLS (HTTPS without a proxy)
+
+Datastar apps normally run behind a reverse proxy that terminates TLS, so the
+server speaks plain HTTP and `Config.tls` stays `null`. Set it when you want the
+server itself to serve HTTPS:
+
+```zig
+var server = try datastar.HTTPServer.init(init, .{
+    .port = 8081,
+    .tls = .{
+        .cert = "certs/fullchain.pem", // leaf first, then intermediates
+        .key  = "certs/privkey.pem",   // PKCS#8 or PKCS#1, RSA or EC
+    },
+});
+```
+
+That's the whole change — one field. TLS is a **per-server** setting, not a
+per-route or per-port one: the server listens on the same port and speaks HTTPS
+instead of HTTP. There is no dual-port mode.
+
+### The library never generates a certificate
+
+If `tls` is set and the certificate cannot be loaded, `init` **fails** with the
+underlying error. It will not fall back to plaintext, and it will not invent a
+self-signed certificate.
+
+That is deliberate. An auto-generated fallback is convenient in development and
+catastrophic in production, because the failure mode is silent: the app reports
+that it started, and nobody notices the TLS nobody configured. A startup error is
+the only safe behaviour. Supply a certificate, or leave `tls` null.
+
+For local development, `tools/make_devcert.sh` writes a self-signed certificate
+into `devcert/`:
+
+```sh
+sh tools/make_devcert.sh                     # localhost + this machine's names
+sh tools/make_devcert.sh devcert 192.168.1.13 # ...and a LAN IP
+```
+
+Browsers ignore the legacy Common Name and match `subjectAltName` only. An
+untrusted issuer gives a warning you can click through, but a SAN *mismatch* is
+a hard failure with no bypass — so if you reach the dev server by any name other
+than `localhost`, pass it to the script.
+
+### Things to know
+
+- **TLS 1.2 only.** BearSSL implements up to TLS 1.2. A TLS 1.3-only client gets
+  a clean handshake failure, not a hang.
+- **No ALPN, so no HTTP/2.** The HTTPS listener is HTTP/1.1.
+- **Budget ~33 KB per connection.** Each TLS connection allocates a BearSSL
+  engine plus its I/O buffer on the heap, well beyond the 4 KiB default read and
+  write buffers. Size thread pools accordingly.
+- **SSE works unchanged.** Long-lived streams write through the same writer, so
+  the detached-SSE path is transport-agnostic.
+- The certificate must outlive every connection: it is loaded once in `init` and
+  freed in `deinit()`, because BearSSL keeps pointers into the DER bytes.

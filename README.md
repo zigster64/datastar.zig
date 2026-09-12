@@ -109,6 +109,41 @@ Each example demonstrates a different pattern:
 
 All examples support `-Dio=zio` for the coroutine backend — e.g. `zig build example_2 -Dio=zio`.
 
+### Running an example over HTTPS 
+
+*** DANGER - EXPERIMENTAL ***
+
+Every example defaults to plain HTTP, matching how Datastar apps are normally
+deployed (behind a proxy that terminates TLS). Pass `--tls` to have the server
+terminate TLS itself, on the same port:
+
+```bash
+sh tools/make_devcert.sh        # once: writes a self-signed cert to devcert/
+./zig-out/bin/example_1 --tls   # now https://localhost:8081
+
+./zig-out/bin/example_1 --port 9000 --tls \
+    --cert certs/fullchain.pem --key certs/privkey.pem
+```
+
+Shared flags, accepted by all examples:
+
+| Flag              | Meaning                                                        |
+| ----------------- | -------------------------------------------------------------- |
+| `--port, -p <N>`  | Port to listen on (defaults to the example's own port)          |
+| `--tls`           | Serve HTTPS on the same port instead of HTTP                    |
+| `--cert <PEM>`    | Certificate chain (default `devcert/cert.pem`)                  |
+| `--key <PEM>`     | Private key (default `devcert/key.pem`)                         |
+| `--help, -h`      | Show usage                                                      |
+
+The library never generates a certificate: `--tls` with a missing or unreadable
+certificate is a startup error, not a fallback to plaintext. See the TLS section
+of [SERVER.md](./SERVER.md) for why.
+
+You will also want HTTPS when testing browser APIs that require a secure context
+— service workers, `crypto.subtle`, OPFS. Note that browsers only treat
+`http://localhost` as secure; reaching the dev server over plain HTTP from
+another machine (a LAN IP, a `.local` name) leaves those APIs unavailable.
+
 `TUTORIAL.md` has the longer walkthrough, including SVG/MathML morphing, advanced SSE patterns, and pub/sub recipes.
 
 ## Installation

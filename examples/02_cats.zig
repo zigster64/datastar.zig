@@ -3,6 +3,7 @@ const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
 const datastar = @import("datastar");
+const example_args = @import("example_args");
 const HTTPRequest = datastar.HTTPRequest;
 const pubsub = datastar.pubsub;
 const options = @import("options");
@@ -25,8 +26,12 @@ pub fn main(init: std.process.Init) !void {
     if (use_zio) std.log.info("🌀 IO backend: zio (stackful coroutines)", .{}) else std.log.info("🧵 IO backend: std Io.Threaded", .{});
 
     // create the server
+    // One call handles --port/--tls/--cert/--key, --help, and bad usage.
+    const args = (try example_args.init(PORT, init.minimal.args)) orelse return;
+
     var server = try datastar.HTTPServer.init(init, .{
-        .port = PORT,
+        .port = args.port,
+        .tls = args.tls,
         .io = io,
         .watch = true,
         .fd_limit = .limited(2048),
