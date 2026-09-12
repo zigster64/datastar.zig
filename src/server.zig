@@ -12,6 +12,7 @@ pub const HTTPRequest = @import("http_request.zig");
 const Log = @import("log.zig");
 const Params = @import("params.zig");
 const Router = @import("router.zig");
+pub const Tls = @import("tls.zig");
 const RouteHandler = Router.RouteHandler;
 const types = @import("middleware.zig");
 
@@ -36,6 +37,10 @@ write_buffer_size: usize = 4 * 1024,
 kernel_backlog: u31 = Io.net.default_kernel_backlog,
 /// Disable Nagle on accepted sockets (see Config.tcp_nodelay).
 tcp_nodelay: bool = true,
+/// Loaded certificate + key when `Config.tls` was set; null for plain HTTP.
+/// Owned by the server for its whole lifetime, because BearSSL keeps pointers
+/// into these bytes for every handshake.
+tls_creds: ?Tls.Credentials = null,
 
 group: Io.Group = .init,
 
@@ -61,6 +66,20 @@ pub const Config = struct {
     /// small request/response pairs stall ~40ms on Nagle + delayed ACK
     /// (Go/Kestrel enable this by default). Set false only if you need Nagle.
     tcp_nodelay: bool = true,
+    /// TLS termination. `null` (the default) serves plain HTTP, which is the
+    /// right choice when a reverse proxy handles TLS — the common deployment
+    /// for Datastar apps. Set it to serve HTTPS directly on this port with no
+    /// proxy in front.
+    ///
+    ///     .tls = .{
+    ///         .cert = "certs/fullchain.pem",  // leaf first, then intermediates
+    ///         .key  = "certs/privkey.pem",    // RSA or EC
+    ///     },
+    ///
+    /// The library never generates a certificate. If one is configured but
+    /// cannot be loaded, `init` fails loudly rather than falling back to
+    /// plaintext or to a self-signed certificate.
+    tls: ?Tls.Config = null,
 };
 
 // FD limit configuration
@@ -77,6 +96,23 @@ pub const FDLimit = enum(rlim_t) {
 pub fn init(process_init: std.process.Init, config: Config) !*Server {
     const io = config.io orelse process_init.io;
     const allocator = config.allocator orelse process_init.gpa;
+
+    // Load the certificate before binding the port. A configured-but-unusable
+    // certificate must fail here, at startup, rather than at the first
+    // handshake — and it must never quietly degrade to plaintext. Deliberately
+    // no fallback: an app that asked for TLS and did not get it should not
+    // start at all.
+    var tls_creds: ?Tls.Credentials = null;
+    if (config.tls) |tls_config| {
+        tls_creds = Tls.loadCredentials(io, allocator, tls_config.cert, tls_config.key) catch |err| {
+            std.log.err(
+                "TLS enabled but the certificate could not be loaded (cert={s}, key={s}): {}",
+                .{ tls_config.cert, tls_config.key, err },
+            );
+            return err;
+        };
+    }
+    errdefer if (tls_creds) |*c| c.deinit();
 
     // if address is not defined / null - then listen on all addresses
     const address = if (config.address) |addr|
@@ -104,6 +140,7 @@ pub fn init(process_init: std.process.Init, config: Config) !*Server {
         .write_buffer_size = config.write_buffer_size,
         .kernel_backlog = config.kernel_backlog,
         .tcp_nodelay = config.tcp_nodelay,
+        .tls_creds = tls_creds,
     };
     errdefer self.arena.deinit();
     self.router = try Router.init(self.arena.allocator());
@@ -115,6 +152,10 @@ pub fn useContext(self: *Server, ctx: *anyopaque) void {
 }
 
 pub fn deinit(self: *Server) void {
+    // Free the certificate before the arena: BearSSL hands out pointers into
+    // these bytes, so they must outlive every connection, and this is the first
+    // point at which no connection can still be using them.
+    if (self.tls_creds) |*c| c.deinit();
     self.arena.deinit();
     self.allocator.destroy(self);
 }
@@ -179,8 +220,41 @@ fn handleConnection(self: *Server, conn: Io.net.Stream) Io.Cancelable!void {
     const read_buffer = arena.allocator().alloc(u8, self.read_buffer_size) catch return error.Canceled;
     const write_buffer = arena.allocator().alloc(u8, self.write_buffer_size) catch return error.Canceled;
 
+    // Transport selection happens here and nowhere else. Everything below sees
+    // only a Reader/Writer pair, so the router, middleware, SSE streaming and
+    // std.http.Server are all unchanged by TLS — including the detached SSE
+    // path, which writes through this same writer long after this loop exits.
+    if (self.tls_creds) |*creds| {
+        const tls_conn = Tls.Connection.create(self.io, self.allocator, conn.socket.handle, creds) catch |err| {
+            std.log.err("tls handshake setup failed: {}", .{err});
+            return error.Canceled;
+        };
+        // Freed on every exit path, including the detached-SSE `break` below.
+        defer tls_conn.destroy();
+
+        // The engines own ~33 KB per connection, so this is the one place worth
+        // remembering when sizing thread pools for a TLS listener.
+        var tls_reader = Tls.Reader.init(tls_conn, read_buffer);
+        var tls_writer = Tls.Writer.init(tls_conn, write_buffer);
+        try serveLoop(self, &arena, &tls_reader.interface, &tls_writer.interface);
+        return;
+    }
+
     var reader = conn.reader(self.io, read_buffer);
     var writer = conn.writer(self.io, write_buffer);
+    try serveLoop(self, &arena, &reader.interface, &writer.interface);
+}
+
+/// The request loop, shared by the plain and TLS transports.
+///
+/// Extracted so the two paths cannot drift: the only difference between them is
+/// which transport feeds `reader_in` / `writer_out`.
+fn serveLoop(
+    self: *Server,
+    arena: *std.heap.ArenaAllocator,
+    reader_in: *Io.Reader,
+    writer_out: *Io.Writer,
+) Io.Cancelable!void {
 
     // Inner arena is per-request. Backed by the outer arena so its blocks come
     // from the same allocator chain; reset(.retain_capacity) between requests
@@ -191,7 +265,7 @@ fn handleConnection(self: *Server, conn: Io.net.Stream) Io.Cancelable!void {
     while (true) {
         defer _ = handler_arena.reset(.retain_capacity);
 
-        var server = std.http.Server.init(&reader.interface, &writer.interface);
+        var server = std.http.Server.init(reader_in, writer_out);
         var request = server.receiveHead() catch break;
 
         var http = HTTPRequest{

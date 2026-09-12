@@ -1,5 +1,6 @@
 const std = @import("std");
 const datastar = @import("datastar");
+const example_args = @import("example_args");
 const options = @import("options");
 const HTTPRequest = datastar.HTTPRequest;
 
@@ -52,9 +53,13 @@ pub fn main(init: std.process.Init) !void {
 
     try setHotReload(io);
 
+    // One call handles --port/--tls/--cert/--key, --help, and bad usage.
+    const args = (try example_args.init(PORT, init.minimal.args)) orelse return;
+
     var server = try datastar.HTTPServer.init(init, .{
-        .port = PORT,
+        .port = args.port,
         .io = io,
+        .tls = args.tls,
         .log = .{
             .format = .terminal,
             .theme = .monochrom,
@@ -66,7 +71,7 @@ pub fn main(init: std.process.Init) !void {
         .fd_limit = .max,
     });
     defer server.deinit();
-    std.log.info("Server listening on http://localhost:{}", .{PORT});
+    example_args.logListenUrl(args.port, args.tls);
 
     {
         const r = server.router;

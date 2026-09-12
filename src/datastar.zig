@@ -6,6 +6,9 @@ pub const pubsub = @import("pubsub");
 
 pub const HTTPServer = @import("server.zig");
 pub const HTTPRequest = HTTPServer.HTTPRequest;
+/// TLS settings for `HTTPServer.Config.tls`. Re-exported so apps can enable
+/// TLS without importing the server module directly.
+pub const TlsConfig = HTTPServer.Tls.Config;
 pub const Params = @import("params.zig");
 
 pub const Command = enum {

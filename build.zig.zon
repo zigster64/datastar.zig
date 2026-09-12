@@ -3,8 +3,20 @@
     .version = "0.1.0",
     .minimum_zig_version = "0.16.0",
     .fingerprint = 0xa2c2b3996211dfe7,
-    // There are no dependencies for using Datastar.zig. The following are to support building examples only
+    // BearSSL provides TLS termination for the built-in HTTP server. It is
+    // optional: apps that run behind a proxy (the common case) never load it,
+    // because `Config.tls` defaults to null. See `src/tls.zig`.
+    //
+    // Upstream BearSSL ships a Makefile rather than a build.zig, so this
+    // wrapper supplies the build and fetches bearssl-0.6.tar.gz itself.
+    // Pinned to a commit, not master, so the build cannot shift underneath us.
+    //
+    // The remaining dependencies exist only to build the example apps.
     .dependencies = .{
+        .bearssl = .{
+            .url = "https://github.com/tardy-org/bearssl-zig/archive/4b3e60ebe99fbf2bd1a38ebbd9e0d7369b7966ea.tar.gz",
+            .hash = "bearssl-0.6.0-Shew4IhfAAAniElGD7Q6ssfo9jXl3XvnaA7T2adv6nhy",
+        },
         // This is needed for those demo apps that require pub-sub
         .pubsub = .{
             .url = "git+https://github.com/zigster64/pubsub.zig#079bf4d94bfe40e91734a84fe418a3f18a0e73b4",

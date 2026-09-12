@@ -37,12 +37,32 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // BearSSL backs the optional TLS listener in src/tls.zig. Linked into the
+    // library rather than each app, so an app enables TLS purely through
+    // `Config.tls` with no build.zig changes of its own.
+    const bearssl = b.dependency("bearssl", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const datastar_module = b.addModule("datastar", .{
         .root_source_file = b.path("src/datastar.zig"),
         .target = target,
         .optimize = optimize,
     });
     datastar_module.addImport("pubsub", pubsub.module("pubsub"));
+    datastar_module.linkLibrary(bearssl.artifact("bearssl"));
+
+    // Shared CLI parsing for the examples (--port/--tls/--cert/--key).
+    const example_args_module = b.createModule(.{
+        .root_source_file = b.path("examples/args.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    example_args_module.addImport("datastar", datastar_module);
+
+    const example_args_tests = b.addTest(.{ .root_module = example_args_module });
+    example_args_tests.root_module.linkLibrary(bearssl.artifact("bearssl"));
 
     // Add test step for server.zig
     const server_tests = b.addTest(.{
@@ -53,6 +73,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     server_tests.root_module.addImport("pubsub", pubsub.module("pubsub"));
+    server_tests.root_module.linkLibrary(bearssl.artifact("bearssl"));
     check.dependOn(&server_tests.step);
 
     const run_server_tests = b.addRunArtifact(server_tests);
@@ -66,6 +87,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     datastar_tests.root_module.addImport("pubsub", pubsub.module("pubsub"));
+    datastar_tests.root_module.linkLibrary(bearssl.artifact("bearssl"));
 
     const run_datastar_tests = b.addRunArtifact(datastar_tests);
 
@@ -73,6 +95,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run all unit tests");
     test_step.dependOn(&run_server_tests.step);
     test_step.dependOn(&run_datastar_tests.step);
+    test_step.dependOn(&b.addRunArtifact(example_args_tests).step);
 
     // Individual test steps
     const test_server_step = b.step("test-server", "Run server tests");
@@ -104,6 +127,8 @@ pub fn build(b: *std.Build) void {
             }),
         });
         exe.root_module.addImport("datastar", datastar_module);
+        exe.root_module.addImport("example_args", example_args_module);
+        exe.root_module.linkLibrary(bearssl.artifact("bearssl"));
         exe.root_module.addOptions("options", options);
         if (io_mode == .zio) {
             exe.root_module.addImport("zio", zio.module("zio"));
@@ -130,6 +155,8 @@ pub fn build(b: *std.Build) void {
             }),
         });
         exe_check.root_module.addImport("datastar", datastar_module);
+        exe_check.root_module.addImport("example_args", example_args_module);
+        exe_check.root_module.linkLibrary(bearssl.artifact("bearssl"));
         exe_check.root_module.addOptions("options", options);
         if (io_mode == .zio) {
             exe_check.root_module.addImport("zio", zio.module("zio"));
