@@ -1,6 +1,6 @@
 # datastar.zig - A Web Framework for Zig 0.16
 
-**A Datastar-aware HTTP server for Zig 0.16. using Datastar v1.0.2**
+**A Datastar-aware HTTP server for Zig 0.16. using Datastar v1.0.3**
 
 
 Build realtime collaborative web apps where the backend pushes DOM patches, signal updates, and browser scripts to connected clients over a fast SSE pipe. Single binary, no JS bundler, no frontend framework.

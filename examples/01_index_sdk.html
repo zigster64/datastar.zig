@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Zig DataStar Streaming API</title>
-  <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.3/bundles/datastar.js"></script>
   <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <link href="/style.css" rel="stylesheet" type="text/css" />
@@ -98,7 +98,8 @@
       <div class="card w-8/12 bg-slate-300 card-lg shadow-sm m-auto">
         <div class="card-body">
           <h2 class="card-title">(3) PatchElements W Options using SSE</h2>
-          <p id="mf-patch-opts">Click the button to use PatchElements to update this content using a variety of options</p>
+          <p id="mf-patch-opts">Click the button to use PatchElements to update this content using a variety of options
+          </p>
           <div class="justify-end card-actions">
             <button class="btn btn-primary" data-on:click="@post('/patch/opts')" data-on:patch-opt>Patch Morph with
               Option</button>
