@@ -1,6 +1,6 @@
-# datastar.zig - A Web Framework for Zig 0.16
+# datastar.zig - A Web Framework for Zig 0.17
 
-**A Datastar-aware HTTP server for Zig 0.16. using Datastar v1.0.3**
+**A Datastar-aware HTTP server for Zig 0.17. using Datastar v1.0.3**
 
 
 Build realtime collaborative web apps where the backend pushes DOM patches, signal updates, and browser scripts to connected clients over a fast SSE pipe. Single binary, no JS bundler, no frontend framework.
@@ -20,7 +20,7 @@ Related repos:
 
 ## Zig Version
 
-Requires Zig **0.16.0** or newer. Tracks the `0.16.0` release.
+Requires Zig **0.17.0** or newer. Tracks the `0.17.0` release.
 
 Breaking Change - sse.patchSignals no longer needs the 'json_options' field, so its simplified to `sse.patchSignals(object, options)`.
 
@@ -86,7 +86,7 @@ A complete, working reactive Datastar app: `zig build && ./your-app`, visit `htt
 The fastest way to get a feel for what this library does is to run the bundled examples.
 
 ```bash
-# Zig 0.16 or newer must be installed
+# Zig 0.17 or newer must be installed
 git clone https://github.com/zigster64/datastar.zig
 cd datastar.zig
 zig build

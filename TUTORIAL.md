@@ -1,8 +1,8 @@
-# Datastar lib for zig 0.16-dev
+# Datastar lib for zig 0.17
 
 ![Cyberpunk Datastar Zig SDK - Sydney Metro Rail - Leica XV](assets/datastar.zig.jpg)
 
-A Zig library for 0.16 / latest stdlib that conforms to the Datastar SDK specification.
+A Zig library for 0.17 / latest stdlib that conforms to the Datastar SDK specification.
 
 https://github.com/starfederation/datastar/blob/develop/sdk/ADR.md
 
@@ -11,7 +11,7 @@ https://github.com/starfederation/datastar/blob/develop/sdk/ADR.md
 Versions :
 
 - Datastar 1.0.1
-- Zig 0.16.0
+- Zig 0.17.0
 
 ## Changelog
 
@@ -24,6 +24,7 @@ Versions :
 | **04-Mar-2026** | `0.16.0-dev.2682`           |                                                                                                     |
 | **15-Mar-2026** | `0.16.0-dev.2821`           | ArrayListUnmanaged now deprecated                                                                   |
 | **13-May-2026** | `0.16.0`                    | Refactored `ScriptAttributes` to use internally `std.array_hash_map.String`.                        |
+| **08-Nov-2026** | `0.17.0`                    | Updated to Zig 0.17, `http.zig`, `dusty` 0.5 and `zio` for the examples.                            |
 
 For stable Zig 0.15.2 - see https://github.com/zigster64/datastar.http.zig
 
