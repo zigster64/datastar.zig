@@ -193,6 +193,13 @@ fn handleConnection(self: *Server, conn: Io.net.Stream) Io.Cancelable!void {
 
         var server = std.http.Server.init(&reader.interface, &writer.interface);
         var request = server.receiveHead() catch break;
+        // RFC 9112: no Content-Length or Transfer-Encoding means an empty body.
+        // Say so, because std.http.Server asserts that a request of a method that
+        // can carry a body has one of them as soon as it responds on a keep-alive
+        // connection, which would let one client stop the whole server.
+        if (request.head.method.requestHasBody() and
+            request.head.transfer_encoding == .none and
+            request.head.content_length == null) request.head.content_length = 0;
 
         var http = HTTPRequest{
             .io = self.io,
