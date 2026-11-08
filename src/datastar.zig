@@ -419,7 +419,6 @@ pub fn readSignals(comptime T: type, arena: std.mem.Allocator, req: *std.http.Se
     }
 }
 
-
 pub const Message = struct {
     out_buffer: *Io.Writer = undefined, // an intermediate buffer to write the expanded Datastar event stream to
     input_buffer: [8 * 1024]u8 = undefined,

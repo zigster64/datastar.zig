@@ -34,19 +34,19 @@ replied: bool = false,
 req_payload: ?[]const u8 = null,
 status: std.http.Status = .ok,
 timer: std.Io.Timestamp = undefined,
-    log: Log = .{},
+log: Log = .{},
 
-    /// Assigns: typed key-value store for middleware → handler communication.
-    /// Lazy-initialized ArrayList backed by the per-request arena. No hard cap.
-    assigns: ?*std.ArrayList(AssignEntry) = null,
+/// Assigns: typed key-value store for middleware → handler communication.
+/// Lazy-initialized ArrayList backed by the per-request arena. No hard cap.
+assigns: ?*std.ArrayList(AssignEntry) = null,
 
-    /// Set by middleware to stop the pipeline. Remaining middleware and the
-    /// route handler are skipped when true.
-    halted: bool = false,
+/// Set by middleware to stop the pipeline. Remaining middleware and the
+/// route handler are skipped when true.
+halted: bool = false,
 
-    /// Opaque pointer to the server's global pipeline. Set by the framework
-    /// before dispatch. Cast to *const Pipeline when needed.
-    _global_pipeline: ?*anyopaque = null,
+/// Opaque pointer to the server's global pipeline. Set by the framework
+/// before dispatch. Cast to *const Pipeline when needed.
+_global_pipeline: ?*anyopaque = null,
 
 /// Entry in the assigns store. Keys are arena-duped strings; values are
 /// arena-allocated typed pointers cast to *anyopaque.

@@ -27,8 +27,8 @@ server: Io.net.Server = undefined,
 router: *Router,
 ctx: ?*anyopaque = null,
 log: Log = undefined,
-    /// Global pipeline — runs before every route. Set via usePipeline().
-    common_pipeline: ?*const types.Pipeline = null,
+/// Global pipeline — runs before every route. Set via usePipeline().
+common_pipeline: ?*const types.Pipeline = null,
 watch: bool = false,
 fd_limit: ?FDLimit = null,
 read_buffer_size: usize = 4 * 1024,
@@ -69,7 +69,7 @@ pub const FDLimit = enum(rlim_t) {
     _,
 
     pub fn limited(n: rlim_t) FDLimit {
-        return @enumFromInt(n);
+        return @fromBackingInt(@intCast(n));
     }
 };
 
@@ -285,7 +285,7 @@ fn setFdLimits(self: *Server) !void {
     if (self.fd_limit) |fd_limit| {
         // Get current limits
         const system_limit = try posix.getrlimit(.NOFILE);
-        var limit = @intFromEnum(fd_limit);
+        var limit = @backingInt(fd_limit);
 
         switch (builtin.os.tag) {
             // tested on Linux as well - was concerned because the rlimit types on BSDs are
@@ -415,8 +415,8 @@ test "Router deduplicates identical paths" {
     try std.testing.expectEqualStrings("test", router.root.children.items[0].segment);
 
     const test_node = router.root.children.items[0];
-    const get_idx = @intFromEnum(std.http.Method.GET);
-    const post_idx = @intFromEnum(std.http.Method.POST);
+    const get_idx = @backingInt(std.http.Method.GET);
+    const post_idx = @backingInt(std.http.Method.POST);
 
     try std.testing.expect(test_node.handlers[get_idx] != null);
     try std.testing.expect(test_node.handlers[post_idx] != null);
