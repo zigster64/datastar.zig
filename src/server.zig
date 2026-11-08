@@ -69,7 +69,7 @@ pub const FDLimit = enum(rlim_t) {
     _,
 
     pub fn limited(n: rlim_t) FDLimit {
-        return @fromBackingInt(@intCast(n));
+        return @fromBackingInt(n);
     }
 };
 

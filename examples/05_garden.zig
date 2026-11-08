@@ -306,7 +306,7 @@ const Plant = struct {
 
         // Grow plant if it breaches the threshold of growth
         if (p.growth_steps > 25 and p.growth_stage != .Fruiting) {
-            p.growth_stage = @fromBackingInt(@intCast(@backingInt(p.growth_stage) + 1));
+            p.growth_stage = @fromBackingInt(@backingInt(p.growth_stage) + 1);
             p.growth_steps = 0;
         }
         std.log.debug("Plant stats: {t}:{t}:{t} {{water: {d}, ph: {d}, sun: {d}}}", .{
