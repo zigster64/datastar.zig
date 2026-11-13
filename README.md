@@ -153,6 +153,7 @@ fn handler(http: *HTTPRequest) !void {
     http.css(body) / cssFmt(fmt, args)    // text/css
     http.js(body) / jsFmt(fmt, args)      // application/javascript
     http.sendFile(path, content_type)     // serve a file, mime-typed by extension
+    http.sendData(content, mime_type)     // send arbritrary data, with given mime type
 
     // Read Datastar signals from the request
     http.readSignals(T)                   // T = your signals struct
