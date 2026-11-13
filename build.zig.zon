@@ -1,28 +1,28 @@
 .{
     .name = .datastar_zig,
     .version = "0.1.0",
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .fingerprint = 0xa2c2b3996211dfe7,
     // There are no dependencies for using Datastar.zig. The following are to support building examples only
     .dependencies = .{
         // This is needed for those demo apps that require pub-sub
         .pubsub = .{
-            .url = "git+https://github.com/zigster64/pubsub.zig#079bf4d94bfe40e91734a84fe418a3f18a0e73b4",
-            .hash = "pubsub-0.0.0-6dy2AZOBAAB1zskJKRdIfdROfrVnp4XW3Rsjn-yPzoXN",
+            .url = "git+https://github.com/EuroZig/pubsub.zig#1834bbe9b22b5641678a35b822fa96ef1a38e86f",
+            .hash = "pubsub-0.0.0-6dy2AVqJAAAVXMooP2TcbrWZmCZoasCZkVx-RvWG62tC",
         },
         // This is needed for the example app that demonstrates how to use with http.zig
         .httpz = .{
-            .url = "git+https://github.com/karlseguin/http.zig#250e208845249e41d48a996dbfb0ce18d2e82761",
-            .hash = "httpz-0.0.0-PNVzrJwbCACCRQFU-_piWqJ_sXHCwxyp4HkHLAyY4msq",
+            .url = "git+https://github.com/karlseguin/http.zig#1bb71ff128a044b1645df91046473c38abbf965c",
+            .hash = "httpz-0.0.0-PNVzrFNMCQBySpfunggKlQQoD_FvF3yADlqg3xfbdX8p",
         },
         // This is needed for the example app that demonstrates how to use with Dusty / zio
         .dusty = .{
-            .url = "git+https://github.com/lalinsky/dusty#28a97b118bf1893a17a47fb77bf6529dd997ad99",
-            .hash = "dusty-0.1.0-Qdw7RqYcCgBfokVHhdXJhX5a7vuSjNx2Yeg-xgcAWSmc",
+            .url = "git+https://github.com/lalinsky/dusty?ref=v0.5.0#48196c2d81f6cc54f6483b87f56cf808a9d7ba56",
+            .hash = "dusty-0.5.0-Qdw7RuwFJAAvz4m-QiYLfUnjj0_91imaCApFQXcDyt1p",
         },
         .zio = .{
-            .url = "git+https://github.com/lalinsky/zio?ref=v0.11.0#53abdf9ce5e6279e29703a39180ce1cedd8ac4ca",
-            .hash = "zio-0.11.0-xHbVVEqQGwDz0MYoQ0j7Ke0Y9E_iZVe5eLAWK4gd9U0i",
+            .url = "git+https://github.com/lalinsky/zio#299a618b6a53607abcf360d8256dd1e86e9a6cdd",
+            .hash = "zio-0.19.0-xHbVVI4kLwCDQRgFZre6XZuVtCzXLIpO3Yeeb_ZgJNIU",
         },
     },
     .paths = .{

@@ -8,10 +8,10 @@ That produces four binaries — two IO backends × two optimization modes:
 
 | Binary                        | IO backend                       | Optimize       |
 | ----------------------------- | -------------------------------- | -------------- |
-| `bench-zig-0.16-fast`         | stdlib `Io.Threaded` (default)   | `ReleaseFast`  |
-| `bench-zig-0.16-debug`        | stdlib `Io.Threaded` (default)   | `Debug`        |
-| `bench-zig-0.16-zio-fast`     | [`lalinsky/zio`](https://github.com/lalinsky/zio) stackful coroutines | `ReleaseFast` |
-| `bench-zig-0.16-zio-debug`    | [`lalinsky/zio`](https://github.com/lalinsky/zio) stackful coroutines | `Debug` |
+| `bench-zig-0.17-fast`         | stdlib `Io.Threaded` (default)   | `ReleaseFast`  |
+| `bench-zig-0.17-debug`        | stdlib `Io.Threaded` (default)   | `Debug`        |
+| `bench-zig-0.17-zio-fast`     | [`lalinsky/zio`](https://github.com/lalinsky/zio) stackful coroutines | `ReleaseFast` |
+| `bench-zig-0.17-zio-debug`    | [`lalinsky/zio`](https://github.com/lalinsky/zio) stackful coroutines | `Debug` |
 
 On startup each binary prints its backend, e.g.:
 

@@ -71,7 +71,7 @@ pub const Classic = struct {
     };
 
     fn statusColorImpl(_: *const anyopaque, status: std.http.Status) []const u8 {
-        const code = @intFromEnum(status);
+        const code = @backingInt(status);
         return switch (code) {
             200...299 => "\x1b[1;32m", // Green bold
             300...399 => "\x1b[1;36m", // Cyan bold
@@ -125,7 +125,7 @@ pub const NewWave = struct {
     };
 
     fn statusColorImpl(_: *const anyopaque, status: std.http.Status) []const u8 {
-        const code = @intFromEnum(status);
+        const code = @backingInt(status);
         return switch (code) {
             200...299 => "\x1b[38;5;158m",
             300...399 => "\x1b[38;5;146m",
@@ -185,7 +185,7 @@ pub const Monochrom = struct {
     };
 
     fn statusColorImpl(_: *const anyopaque, status: std.http.Status) []const u8 {
-        const code = @intFromEnum(status);
+        const code = @backingInt(status);
         return switch (code) {
             200...299 => "\x1b[38;5;245m",
             300...399 => "\x1b[38;5;251m",

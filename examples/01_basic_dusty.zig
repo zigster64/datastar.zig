@@ -56,7 +56,9 @@ pub fn main(init: std.process.Init) !void {
 
     const allocator = init.gpa;
 
-    var server = dusty.Server(void).init(allocator, init.io, .{}, {});
+    var server = dusty.Server(void).init(allocator, init.io, .{
+        .listeners = &.{.{ .address = .{ .ip = .{ .ip4 = .loopback(PORT) } } }},
+    }, {});
     defer server.deinit();
 
     const r = &server.router;
@@ -81,7 +83,7 @@ pub fn main(init: std.process.Init) !void {
     r.post("/hotreload/:id", hotreload);
 
     std.log.info("Server listening on http://localhost:{}", .{PORT});
-    try server.listen(.{ .ip = .{ .ip4 = .loopback(PORT) } });
+    try server.run();
 }
 
 // ----- Helpers -----
@@ -306,15 +308,17 @@ fn executeScript(req: *dusty.Request, res: *dusty.Response) !void {
 // ----- Long-lived streaming SSE -----
 //
 // `svgMorph`, `mathMorph`, and `hotreload` push many SSE events spaced over
-// time. Dusty exposes streaming via `res.startEventStream()` which writes the
-// SSE headers and returns an `EventStream` wrapping the underlying writer.
-// Its `send()` helper only accepts single-line payloads, so we bypass it and
-// write our pre-formatted Datastar SSE blocks directly to `stream.conn` —
+// time. Dusty exposes streaming via `res.startEventStream(buf)` which sets the
+// SSE headers and returns an `EventStream` wrapping the body writer. Its
+// `send()` helper only accepts single-line payloads, so we bypass it and
+// write our pre-formatted Datastar SSE blocks directly to `stream.body` —
 // each block is already a fully-formed `event: ...\ndata: ...\n\n` chunk.
 //
 // The handler stays running for the whole stream, so `req.arena` is valid
 // throughout. We allocate each frame's SSE block on a `FixedBufferAllocator`
 // over a stack buffer and reset between frames to keep memory bounded.
+//
+// Long streams opt out of the request deadline with `req.setTimeout(.none)`.
 
 fn writeBlock(conn: *Io.Writer, block: []const u8) !void {
     try conn.writeAll(block);
@@ -323,13 +327,15 @@ fn writeBlock(conn: *Io.Writer, block: []const u8) !void {
 
 fn svgMorph(req: *dusty.Request, res: *dusty.Response) !void {
     const opt = try readSignals(struct { svgMorph: usize = 1 }, req);
-    const stream = try res.startEventStream();
+    req.setTimeout(.none);
+    var stream_buf: [4096]u8 = undefined;
+    var stream = try res.startEventStream(&stream_buf);
 
     var frame_buf: [4096]u8 = undefined;
     var fba: std.heap.FixedBufferAllocator = .init(&frame_buf);
 
     for (0..opt.svgMorph) |_| {
-        try emitSvgFrame(stream.conn, &fba,
+        try emitSvgFrame(&stream.body.interface, &fba,
             \\<circle id="svg-circle" cx="{}" cy="{}" r="{}" class="fill-red-500 transition-all duration-500" />
         , .{
             prng.random().intRangeAtMost(u8, 10, 100),
@@ -338,7 +344,7 @@ fn svgMorph(req: *dusty.Request, res: *dusty.Response) !void {
         });
         try req.io.sleep(.fromMilliseconds(100), .real);
 
-        try emitSvgFrame(stream.conn, &fba,
+        try emitSvgFrame(&stream.body.interface, &fba,
             \\<rect id="svg-square" x="{}" y="{}" width="{}" height="80" class="fill-green-500 transition-all duration-500" />
         , .{
             prng.random().intRangeAtMost(u8, 10, 100),
@@ -347,7 +353,7 @@ fn svgMorph(req: *dusty.Request, res: *dusty.Response) !void {
         });
         try req.io.sleep(.fromMilliseconds(100), .real);
 
-        try emitSvgFrame(stream.conn, &fba,
+        try emitSvgFrame(&stream.body.interface, &fba,
             \\<polygon id="svg-triangle" points="{},{} {},{} {},{}" class="fill-blue-500 transition-all duration-500" />
         , .{
             prng.random().intRangeAtMost(u16, 50, 300),
@@ -359,6 +365,7 @@ fn svgMorph(req: *dusty.Request, res: *dusty.Response) !void {
         });
         try req.io.sleep(.fromMilliseconds(100), .real);
     }
+    try stream.body.end();
 }
 
 fn emitSvgFrame(
@@ -403,7 +410,9 @@ fn mathMorph(req: *dusty.Request, res: *dusty.Response) !void {
         return;
     }
 
-    const stream = try res.startEventStream();
+    req.setTimeout(.none);
+    var stream_buf: [4096]u8 = undefined;
+    var stream = try res.startEventStream(&stream_buf);
     var frame_buf: [4096]u8 = undefined;
     var fba: std.heap.FixedBufferAllocator = .init(&frame_buf);
 
@@ -422,13 +431,14 @@ fn mathMorph(req: *dusty.Request, res: *dusty.Response) !void {
             mathMLs[r - 1],
             .{ .namespace = .mathml },
         );
-        try writeBlock(stream.conn, block);
+        try writeBlock(&stream.body.interface, block);
         try req.io.sleep(.fromMilliseconds(delay_ms), .real);
     }
 
     fba.reset();
     const reset_block = try datastar.patchSignalsAlloc(fba.allocator(), .{ .mathmlMorph = 1 }, .{});
-    try writeBlock(stream.conn, reset_block);
+    try writeBlock(&stream.body.interface, reset_block);
+    try stream.body.end();
 }
 
 fn code(req: *dusty.Request, res: *dusty.Response) !void {
@@ -489,7 +499,9 @@ fn mimeTest(req: *dusty.Request, res: *dusty.Response) !void {
 
 fn hotreload(req: *dusty.Request, res: *dusty.Response) !void {
     const id = paramInt(u64, req, "id") orelse 0;
-    const stream = try res.startEventStream();
+    req.setTimeout(.none);
+    var stream_buf: [4096]u8 = undefined;
+    var stream = try res.startEventStream(&stream_buf);
 
     var frame_buf: [1024]u8 = undefined;
     var fba: std.heap.FixedBufferAllocator = .init(&frame_buf);
@@ -497,7 +509,8 @@ fn hotreload(req: *dusty.Request, res: *dusty.Response) !void {
     if (id != hotreload_id) {
         std.log.warn("Client is stale {} != {} - reload them", .{ id, hotreload_id });
         const block = try datastar.executeScriptAlloc(fba.allocator(), "window.location.reload()", .{});
-        try writeBlock(stream.conn, block);
+        try writeBlock(&stream.body.interface, block);
+        try stream.body.end();
         return;
     }
 
@@ -517,6 +530,6 @@ fn hotreload(req: *dusty.Request, res: *dusty.Response) !void {
             .{seconds},
         );
         const block = try datastar.patchElementsAlloc(fba.allocator(), ping, .{});
-        try writeBlock(stream.conn, block);
+        try writeBlock(&stream.body.interface, block);
     }
 }

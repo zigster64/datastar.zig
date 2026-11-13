@@ -23,13 +23,13 @@ const Node = struct {
     segment: []const u8 = "",
     is_param: bool = false,
     param_name: []const u8 = "",
-    handlers: [std.enums.values(std.http.Method).len]?RouteHandlerFn = [_]?RouteHandlerFn{null} ** std.enums.values(std.http.Method).len,
-    fiber: [std.enums.values(std.http.Method).len]bool = [_]bool{false} ** std.enums.values(std.http.Method).len,
+    handlers: [std.enums.values(std.http.Method).len]?RouteHandlerFn = @splat(null),
+    fiber: [std.enums.values(std.http.Method).len]bool = @splat(false),
     children: std.ArrayList(*Node) = .empty,
     /// Pipeline for route groups — applies to this node and all descendants.
     group_pipeline: ?*const Pipeline = null,
     /// Per-route (per-method) pipelines.
-    route_pipelines: [std.enums.values(std.http.Method).len]?*const Pipeline = [_]?*const Pipeline{null} ** std.enums.values(std.http.Method).len,
+    route_pipelines: [std.enums.values(std.http.Method).len]?*const Pipeline = @splat(null),
 
     fn deinit(self: *Node, alloc: std.mem.Allocator) void {
         for (self.children.items) |child| child.deinit(alloc);
@@ -188,7 +188,7 @@ pub fn addOpt(self: *Router, method: std.http.Method, path: []const u8, handler:
             current = node;
         }
     }
-    const mi = @intFromEnum(method);
+    const mi = @backingInt(method);
     current.handlers[mi] = handler;
     current.fiber[mi] = opts.fiber;
     current.route_pipelines[mi] = opts.pipeline;
@@ -232,7 +232,7 @@ pub fn add(self: *Router, method: std.http.Method, path: []const u8, handler: Ro
             current = node;
         }
     }
-    current.handlers[@intFromEnum(method)] = handler;
+    current.handlers[@backingInt(method)] = handler;
 
     // on bootup - just always print the routes in effect
     std.log.debug("  > {t} {s}{s}", .{
@@ -316,7 +316,7 @@ pub fn dispatch(self: *Router, http: *HTTPRequest) !void {
     // Pipeline accumulation: global → group (root→leaf) → route-level.
     // Run middleware from each source in order; halt stops the chain.
     const middleware_mod = @import("middleware.zig");
-    const method_idx = @intFromEnum(http.method);
+    const method_idx = @backingInt(http.method);
 
     // 1. Global pipeline (set via server.usePipeline)
     if (http._global_pipeline) |gp_ptr| {

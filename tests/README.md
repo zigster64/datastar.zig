@@ -2,7 +2,7 @@
 
 ## Build
 
-(Requires Zig 0.16-dev)
+(Requires Zig 0.17)
 
 ```
 zig build

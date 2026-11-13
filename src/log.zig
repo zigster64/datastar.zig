@@ -51,7 +51,7 @@ pub fn info(log: Log, http: *HTTPRequest) void {
             formatTimeAlloc(http),
             c.reset,
             c.statusColor(http.status),
-            @intFromEnum(http.status),
+            @backingInt(http.status),
             c.reset,
             c.methodColor(http.method),
             http.method,
