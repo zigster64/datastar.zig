@@ -52,6 +52,12 @@ pub fn build(b: *std.Build) void {
     });
     datastar_module.addImport("pubsub", pubsub.module("pubsub"));
     datastar_module.linkLibrary(bearssl.artifact("bearssl"));
+    // Zig 0.17 removed `@cImport`, so the BearSSL bindings arrive as a
+    // generated module instead. The wrapper package already runs `translate-c`
+    // over `bearssl.h` and publishes the result as `bearssl.h`. Imported as
+    // `c` because that is the name `src/tls.zig` uses at every call site.
+    // ... yuk :(
+    datastar_module.addImport("c", bearssl.module("bearssl.h"));
 
     // Shared CLI parsing for the examples (--port/--tls/--cert/--key).
     const example_args_module = b.createModule(.{
@@ -73,6 +79,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     server_tests.root_module.addImport("pubsub", pubsub.module("pubsub"));
+    server_tests.root_module.addImport("c", bearssl.module("bearssl.h"));
     server_tests.root_module.linkLibrary(bearssl.artifact("bearssl"));
     check.dependOn(&server_tests.step);
 

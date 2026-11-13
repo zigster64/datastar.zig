@@ -29,9 +29,7 @@
 
 const std = @import("std");
 
-pub const c = @cImport({
-    @cInclude("bearssl.h");
-});
+pub const c = @import("c");
 
 /// AES-256-GCM with ECDHE and a SHA-384 PRF. BearSSL's `full` profiles also
 /// enable CBC and CCM suites; this constant exists so the negotiated suite is
@@ -256,7 +254,7 @@ pub fn loadCredentials(
     // into `key_storage` and point at the copy.
     const KeyStorage = extern struct {
         ctx: c.br_skey_decoder_context align(8),
-        pad: [256]u8 = [_]u8{0} ** 256,
+        pad: [256]u8 = @splat(0),
     };
     const storage: *KeyStorage = @ptrCast(@alignCast(creds.key_storage.ptr));
     c.br_skey_decoder_init(&storage.ctx);
