@@ -50,6 +50,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
     datastar_module.addImport("pubsub", pubsub.module("pubsub"));
     datastar_module.linkLibrary(bearssl.artifact("bearssl"));
     // Zig 0.17 removed `@cImport`, so the BearSSL bindings arrive as a
