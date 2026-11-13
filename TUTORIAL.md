@@ -149,7 +149,7 @@ fn index(http: *HTTPRequest) !void {
         \\<!DOCTYPE html>
         \\<head>
         \\  <script type="module"
-        \\    src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.3/bundles/datastar.js">
+        \\    src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.5/bundles/datastar.js">
         \\  </script>
         \\</head>
 
