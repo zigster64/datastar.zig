@@ -7,7 +7,7 @@
     .dependencies = .{
         // This is needed for those demo apps that require pub-sub
         .pubsub = .{
-            .url = "git+https://github.com/EuroZig/pubsub.zig#1834bbe9b22b5641678a35b822fa96ef1a38e86f",
+            .url = "git+https://github.com/zigster64/pubsub.zig#a5a9b85623e20d6c3a085825c57350517c983db4",
             .hash = "pubsub-0.0.0-6dy2AVqJAAAVXMooP2TcbrWZmCZoasCZkVx-RvWG62tC",
         },
         // This is needed for the example app that demonstrates how to use with http.zig
