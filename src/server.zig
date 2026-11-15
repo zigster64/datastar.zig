@@ -123,6 +123,96 @@ pub fn concurrent(self: *Server, function: anytype, args: std.meta.ArgsTuple(@Ty
     return self.group.concurrent(self.io, function, args);
 }
 
+/// How long the accept loop waits after failing for want of a file
+/// descriptor or memory, doubling up to the cap. Short enough that a brief
+/// shortage costs a little latency, capped so a sustained one settles into
+/// one attempt a second rather than a spin.
+pub const min_accept_backoff_ms = 5;
+pub const max_accept_backoff_ms = 1000;
+
+/// What the accept loop should do about a failed `accept`.
+pub const AcceptAction = union(enum) {
+    /// The error belonged to a single connection. Try again immediately.
+    retry,
+    /// The machine is out of something for now. Wait, then try again.
+    backoff,
+    /// No retry can help; the loop must stop and report this error.
+    stop,
+};
+
+/// Classifies an accept error. Split out from the loop so the policy can be
+/// tested directly, without a live listener or a starved file-descriptor
+/// table.
+pub fn classifyAcceptError(err: Io.net.Server.AcceptError) AcceptAction {
+    return switch (err) {
+        // One connection went away between its SYN and our accept, which says
+        // nothing about the listener. Routine on a public address, where
+        // clients reset and scanners probe, so it is not worth a log line or a
+        // pause.
+        error.ConnectionAborted,
+        // Linux reports an error already pending on the new connection from
+        // accept itself (see accept(2)), so it belongs to one client, not to
+        // the listener.
+        error.ProtocolFailure,
+        => .retry,
+
+        // The machine is out of something, for now. Sleeping and trying again
+        // turns that into latency; returning would turn a condition that
+        // clears on its own into an outage that needs a restart. `NetworkDown`
+        // is also a pending connection error on Linux, and `Unexpected` is
+        // where the rest of those (EHOSTUNREACH, ENETUNREACH, ...) end up.
+        // `BlockedByFirewall` can also be a security policy denying every
+        // accept, which would spin without a pause.
+        error.ProcessFdQuotaExceeded,
+        error.SystemFdQuotaExceeded,
+        error.SystemResources,
+        error.WouldBlock,
+        error.NetworkDown,
+        error.BlockedByFirewall,
+        error.Unexpected,
+        => .backoff,
+
+        // The socket itself is gone, or we were asked to stop. No retry
+        // brings either back.
+        error.SocketNotListening,
+        error.Canceled,
+        => .stop,
+    };
+}
+
+/// Polls the listener until it is cancelled.
+pub fn acceptLoop(self: *Server) !void {
+    // Grows while accepting keeps failing for want of resources, and is reset
+    // by the first connection that gets through.
+    var backoff_ms: u64 = 0;
+
+    while (true) {
+        const conn = self.server.accept(self.io) catch |err| switch (classifyAcceptError(err)) {
+            .retry => continue,
+            .backoff => {
+                backoff_ms = if (backoff_ms == 0) min_accept_backoff_ms else @min(backoff_ms * 2, max_accept_backoff_ms);
+                std.log.warn("Accept failed: {}; retrying in {d}ms", .{ err, backoff_ms });
+                // A cancel is taken here rather than left to the next accept.
+                // That accept keeps failing for its own reason -- the fd table
+                // is full, which is why we are backing off -- and an operation
+                // that completes with a result of its own has its
+                // cancellation re-armed rather than reported, so relying on
+                // the next accept to surface the cancel would livelock.
+                try self.io.sleep(.fromMilliseconds(@intCast(backoff_ms)), .awake);
+                continue;
+            },
+            .stop => return err,
+        };
+        backoff_ms = 0;
+
+        self.group.concurrent(self.io, handleConnection, .{ self, conn }) catch |err| {
+            std.log.err("spawn handler error {}\n", .{err});
+            conn.close(self.io);
+            continue; // ah well failed - try another one, dont exit the loop yet
+        };
+    }
+}
+
 pub fn run(self: *Server) !void {
     self.setFdLimits() catch |err| std.log.err("Failed to raise FD limits {}", .{err});
     defer self.group.cancel(self.io);
@@ -133,14 +223,7 @@ pub fn run(self: *Server) !void {
         };
     }
 
-    while (true) {
-        const conn = try self.server.accept(self.io);
-        self.group.concurrent(self.io, handleConnection, .{ self, conn }) catch |err| {
-            std.log.err("spawn handler error {}\n", .{err});
-            conn.close(self.io);
-            continue; // ah well failed - try another one, dont exit the loop yet
-        };
-    }
+    return acceptLoop(self);
 }
 
 fn nonBlocking(conn: Io.net.Stream) !void {
@@ -459,4 +542,62 @@ test "Config defaults keep lean buffers and enable tcp_nodelay" {
     try std.testing.expectEqual(@as(usize, 4 * 1024), cfg.write_buffer_size);
     try std.testing.expectEqual(Io.net.default_kernel_backlog, cfg.kernel_backlog);
     try std.testing.expect(cfg.tcp_nodelay);
+}
+
+// Drives `classifyAcceptError` over the failures that used to escape `run()`
+// and take the listener with them. Testing the classification rather than the
+// loop keeps this deterministic: proving the same thing through a real accept
+// would mean starving the test process of file descriptors, which the other
+// tests in this binary share.
+test "accept errors that belong to one connection are retried at once" {
+    // A client that resets between its SYN and our accept, or a per-connection
+    // error the kernel reports through accept. Neither says anything about the
+    // health of the listener, so neither may cost a pause or a restart.
+    for ([_]Io.net.Server.AcceptError{
+        error.ConnectionAborted,
+        error.ProtocolFailure,
+    }) |err| {
+        try std.testing.expectEqual(AcceptAction.retry, classifyAcceptError(err));
+    }
+}
+
+test "accept errors from resource exhaustion back off instead of dying" {
+    // These used to fall straight out of `run()`. The listener has to absorb
+    // them: the condition clears on its own, so returning would turn a
+    // temporary shortage into an outage that needs a restart.
+    for ([_]Io.net.Server.AcceptError{
+        error.ProcessFdQuotaExceeded,
+        error.SystemFdQuotaExceeded,
+        error.SystemResources,
+        error.WouldBlock,
+        error.NetworkDown,
+        error.BlockedByFirewall,
+        error.Unexpected,
+    }) |err| {
+        try std.testing.expectEqual(AcceptAction.backoff, classifyAcceptError(err));
+    }
+}
+
+test "accept errors no retry can fix stop the loop" {
+    // A dead listener socket, or a cancel. Spinning on either would be futile.
+    for ([_]Io.net.Server.AcceptError{
+        error.SocketNotListening,
+        error.Canceled,
+    }) |err| {
+        try std.testing.expectEqual(AcceptAction.stop, classifyAcceptError(err));
+    }
+}
+
+test "backoff starts small and is capped" {
+    // The first wait must be short enough to be unnoticeable, and a sustained
+    // shortage has to settle into one attempt a second rather than a spin.
+    var backoff_ms: u64 = 0;
+    backoff_ms = if (backoff_ms == 0) min_accept_backoff_ms else @min(backoff_ms * 2, max_accept_backoff_ms);
+    try std.testing.expectEqual(min_accept_backoff_ms, backoff_ms);
+
+    var samples: u32 = 0;
+    while (samples < 64) : (samples += 1) {
+        backoff_ms = if (backoff_ms == 0) min_accept_backoff_ms else @min(backoff_ms * 2, max_accept_backoff_ms);
+    }
+    try std.testing.expectEqual(max_accept_backoff_ms, backoff_ms);
 }

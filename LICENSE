@@ -19,3 +19,24 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+------
+
+Additional contributions and inspirations
+
+https://github.com/lalinsky/dusty
+Copyright (c) 2025 Lukas Lalinsky and contributors.
+
+- The Updated accept() code with incremental backoff is taken in part directly from 
+  the way that dusty does the same thing. I didnt realize that accept() has a whole range of 
+  common failure modes that really need to be checked in detail and treated very differently.
+
+
+https://github.com/karlseguin/http.zig
+Copyright (c) 2024 Karl Seguin.
+
+- The general concept of the server loop + router + general coding API taken mostly from
+  Karl's excellent http.zig - which predates zig's std.Io. I was a pretty heavy contributor 
+  to this project, and this whole datastar library initially started as an experiment to 
+  port http.zig across to zig's new std.Io, by stripping it back to remove the Io loop and
+  posix code.
